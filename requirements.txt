@@ -1,5 +1,4 @@
 torch>=2.1
 numpy
-pandas
 transformers>=4.40
 pytest

@@ -19,10 +19,10 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from pact.data import EmbeddingStore, build_datasets, load_series
-from pact.baselines import TimeCMA
+from pact.baselines import V5, TimeCMA
 from pact.model import PACT
 
-MODELS = {"pact": PACT, "timecma": TimeCMA}
+MODELS = {"pact": PACT, "timecma": TimeCMA, "v5": V5}
 
 
 def get_args(argv=None):
@@ -40,6 +40,8 @@ def get_args(argv=None):
     a("--model", default="pact", choices=list(MODELS))
     a("--d_layers", type=int, default=1, help="TimeCMA decoder layers")
     a("--tc_d_ff", type=int, default=32, help="TimeCMA cross-modal FFN width")
+    a("--v5_encoder", default="conv_nomask_hybrid", choices=["conv_transformer_unified", "conv_nomask_hybrid", "transformer_nomask"])
+    a("--v5_fusion", default="weighted", choices=["simple", "attention", "gating", "weighted"])
     a("--token_mode", default="patch", choices=["patch", "variate"])
     a("--patch_len", type=int, default=16)
     a("--stride", type=int, default=8)
@@ -115,6 +117,8 @@ def freq_loss(pred, y):
 
 
 def aux_weight(name, args):
+    if name == "legacy":
+        return 1.0
     return args.lambda_align if name.startswith("align") else args.lambda_div
 
 
@@ -190,6 +194,7 @@ def main(argv=None):
     val_loader = DataLoader(val_set, shuffle=False, drop_last=False, **kw)
     test_loader = DataLoader(test_set, shuffle=False, drop_last=False, **kw)
 
+    args.device_str = str(device)
     model = MODELS[args.model](args).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"{args.dataset} L={args.seq_len} H={args.pred_len} seed={args.seed} tag={args.tag} | "

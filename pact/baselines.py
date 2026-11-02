@@ -6,6 +6,7 @@ CrossModal block is written with nn.MultiheadAttention, which is mathematically 
 n_layers=1 (residual attention scores are only carried between layers).
 Embeddings are the same last-token prompt embeddings PACT uses, so both models see identical inputs.
 """
+import torch
 import torch.nn as nn
 
 from pact.model import RevIN
@@ -52,3 +53,25 @@ class TimeCMA(nn.Module):
         dec = self.decoder(cross, cross)
         y = self.c_to_length(dec).permute(0, 2, 1)  # [B, H, N]
         return self.revin.denorm(y), {}
+
+
+class V5(nn.Module):
+    """The model used for the first submission (TimeCMA_pro_v5.Dual_Decomposed_Advanced), unchanged.
+
+    Kept to report how the original architecture behaves under the corrected protocol. It contains the
+    LocalDetailRefinement CNN branch and the training-only decomposition constraints of the original code;
+    its auxiliary loss (0.1 * InfoNCE + 0.05 * orthogonality, fixed inside the model) is added with weight 1.
+    """
+
+    def __init__(self, cfg):
+        super().__init__()
+        from pact.legacy.v5_model import Dual_Decomposed_Advanced
+        self.net = Dual_Decomposed_Advanced(
+            device=cfg.device_str, channel=cfg.d_model, num_nodes=cfg.num_vars, seq_len=cfg.seq_len,
+            pred_len=cfg.pred_len, dropout_n=cfg.dropout, d_llm=cfg.d_llm, e_layer=cfg.e_layers,
+            d_layer=cfg.d_layers, head=cfg.n_heads, kernel_size=cfg.kernel_size, learnable_decomposition=True,
+            fusion_strategy=cfg.v5_fusion, ts_encoder_type=cfg.v5_encoder, n_prototypes=cfg.n_prototypes)
+
+    def forward(self, x, emb=None):
+        pred, aux = self.net(x, None, emb)
+        return pred, ({"legacy": aux} if torch.is_tensor(aux) else {})

@@ -65,7 +65,7 @@ def cmd(ds, H, seed, tag, flags, extra):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--group", required=True, choices=["pilot", "main", "timecma", "ablation", "llm", "kproto", "kernel"])
+    p.add_argument("--group", required=True, choices=["pilot", "main", "timecma", "v5", "ablation", "llm", "kproto", "kernel"])
     p.add_argument("--datasets", default=None, help="comma list (default depends on the group)")
     p.add_argument("--seeds", default="2024")
     p.add_argument("--full", default="", help="flags of the chosen full configuration (after the pilot)")
@@ -89,6 +89,12 @@ def main():
                 lr, ch, el, dl, do, bs = TIMECMA_OFFICIAL[ds][H]
                 fl = f"--model timecma --d_model {ch} --e_layers {el} --d_layers {dl} --dropout {do} --lr {lr} --warmup 0"
                 jobs.append(cmd(ds, H, s, "timecma", fl, a.extra).replace(f"--batch_size {DATASETS[ds]['bs']}", f"--batch_size {bs}"))
+    elif a.group == "v5":  # first-submission model; settings of the original run scripts (run_ablation_*.sh)
+        fl = ("--model v5 --d_model 64 --e_layers 2 --d_layers 2 --kernel_size 25 --n_prototypes 16 "
+              "--v5_encoder conv_nomask_hybrid --v5_fusion weighted --lr 5e-4 --dropout 0.1 --lambda_freq 0")
+        for ds, s in itertools.product(pick(list(DATASETS)), seeds):
+            for H in DATASETS[ds]["H"]:
+                jobs.append(cmd(ds, H, s, "v5", fl, a.extra).replace("--kernel_size 7 ", ""))
     elif a.group == "ablation":
         for ds, s, (tag, fl) in itertools.product(pick(["ETTh2", "ETTm2", "Weather", "ECL", "ILI"]), seeds, ABLATIONS.items()):
             for H in DATASETS[ds]["H"]:

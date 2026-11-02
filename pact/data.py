@@ -8,11 +8,12 @@ Values are z-scored with statistics fitted on the training portion only.
 Each window is identified by its *global* start index ``s`` (x = rows s..s+L-1), which is
 also the row index into the pre-computed LLM prompt-embedding store (see build_embeddings.py).
 """
+import csv
 import json
 import os
+from datetime import datetime
 
 import numpy as np
-import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
@@ -60,19 +61,25 @@ def resolve_csv(dataset, root_path, data_file=None):
 def load_series(dataset, root_path, seq_len, data_file=None, target="OT"):
     """Load a dataset csv and return raw values, z-scored values, dates and split borders."""
     kind = DATASETS[dataset][1] if dataset in DATASETS else "custom"
-    df = pd.read_csv(resolve_csv(dataset, root_path, data_file))
-    cols = [c for c in df.columns if c != "date"]
+    with open(resolve_csv(dataset, root_path, data_file), newline="") as f:
+        rows = list(csv.reader(f))
+    header, body = rows[0], [r for r in rows[1:] if r]
+    has_date = header[0] == "date"
+    cols = header[1:] if has_date else header[:]
+    order = list(range(len(cols)))
     if kind == "custom" and target in cols:  # target last, as in the reference loaders
-        cols.remove(target)
-        cols.append(target)
-    raw = df[cols].values.astype(np.float32)
-    border1s, border2s = split_borders(kind, len(df), seq_len)
+        t = cols.index(target)
+        order = [i for i in order if i != t] + [t]
+    off = 1 if has_date else 0
+    raw = np.array([[float(r[off + i]) for i in order] for r in body], dtype=np.float32)
+    cols = [cols[i] for i in order]
+    dates = [datetime.fromisoformat(r[0]) for r in body] if has_date else None
+    border1s, border2s = split_borders(kind, len(body), seq_len)
     train = raw[border1s[0]:border2s[0]]
     mean = train.mean(0)
     std = train.std(0)
     std[std == 0] = 1.0
     scaled = ((raw - mean) / std).astype(np.float32)
-    dates = pd.to_datetime(df["date"]) if "date" in df.columns else None
     return dict(raw=raw, scaled=scaled, dates=dates, columns=cols, mean=mean, std=std,
                 border1s=border1s, border2s=border2s, kind=kind)
 

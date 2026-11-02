@@ -4,8 +4,9 @@ import os
 import subprocess
 import sys
 
+from datetime import datetime, timedelta
+
 import numpy as np
-import pandas as pd
 import pytest
 import torch
 
@@ -26,8 +27,11 @@ def data_root(tmp_path_factory):
     vals = {f"v{j}": np.sin(2 * np.pi * t / (12 + 5 * j)) * 10 + 0.01 * t + rng.normal(0, 0.5, N_ROWS)
             for j in range(N_VARS - 1)}
     vals["OT"] = np.cos(2 * np.pi * t / 24) * 5 + rng.normal(0, 0.5, N_ROWS)
-    df = pd.DataFrame({"date": pd.date_range("2020-01-01", periods=N_ROWS, freq="h"), **vals})
-    df.to_csv(root / "toy.csv", index=False)
+    start = datetime(2020, 1, 1)
+    with open(root / "toy.csv", "w") as f:
+        f.write("date," + ",".join(vals) + "\n")
+        for i in range(N_ROWS):
+            f.write(str(start + timedelta(hours=i)) + "," + ",".join(f"{vals[k][i]:.6f}" for k in vals) + "\n")
     # fake embedding store [T-L+1, N, d]
     emb_dir = root / "emb" / "Toy"
     emb_dir.mkdir(parents=True)
@@ -80,6 +84,7 @@ VARIANTS = {
     "nothing": dict(llm="none", pdpl=0, decomp="none"),
     "fusion_sum": dict(fusion="sum"),
     "timecma": dict(model="timecma", d_model=8),
+    "v5": dict(model="v5", d_model=16, kernel_size=25),
 }
 
 
