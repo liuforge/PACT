@@ -4,8 +4,8 @@ source /mnt/proj/pact-code/env.sh
 mkdir -p logs jobs
 emb() { $PY build_embeddings.py --dataset $1 --root_path data --seq_len $2 --model hf_models/gpt2 --tag $3 --random_init $4 --batch_size 256 > logs/emb_$1_$3.log 2>&1; }
 (
-  for ds in ETTh1 ETTm2 Weather ETTh2 ETTm1; do emb $ds 96 gpt2 0; done
   emb ILI 36 gpt2 0
+  for ds in ETTh1 ETTm2 Weather ETTh2 ETTm1; do emb $ds 96 gpt2 0; done
   for ds in ETTh1 ETTh2 ETTm2 Weather; do emb $ds 96 gpt2-randinit 1; done
   emb ILI 36 gpt2-randinit 1
 ) &
