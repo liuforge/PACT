@@ -49,12 +49,12 @@ def resolve_csv(dataset, root_path, data_file=None):
     if data_file:
         return data_file if os.path.isabs(data_file) else os.path.join(root_path, data_file)
     rel = DATASETS[dataset][0]
-    path = os.path.join(root_path, rel)
-    if not os.path.exists(path):  # TimeCMA-style flat layout: root/ECL.csv
-        flat = os.path.join(root_path, f"{dataset}.csv")
-        if os.path.exists(flat):
-            return flat
-    return path
+    # registry layout (root/electricity/electricity.csv), flat layout (root/electricity.csv), TimeCMA layout (root/ECL.csv)
+    candidates = [rel, os.path.basename(rel), f"{dataset}.csv"]
+    for c in candidates:
+        if os.path.exists(os.path.join(root_path, c)):
+            return os.path.join(root_path, c)
+    raise FileNotFoundError(f"{dataset}: none of {candidates} under {root_path}")
 
 
 def load_series(dataset, root_path, seq_len, data_file=None, target="OT"):
