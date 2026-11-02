@@ -19,10 +19,12 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from pact.data import EmbeddingStore, build_datasets, load_series
-from pact.baselines import V5, TimeCMA
+from pact.baselines import TSLib, V5, RLinear, TimeCMA
 from pact.model import PACT
 
-MODELS = {"pact": PACT, "timecma": TimeCMA, "v5": V5}
+MODELS = {"pact": PACT, "timecma": TimeCMA, "v5": V5, "rlinear": RLinear,
+          "patchtst": TSLib, "itransformer": TSLib, "dlinear": TSLib, "timesnet": TSLib}
+NEEDS_EMB = {"pact", "timecma", "v5"}
 
 
 def get_args(argv=None):
@@ -42,6 +44,11 @@ def get_args(argv=None):
     a("--tc_d_ff", type=int, default=32, help="TimeCMA cross-modal FFN width")
     a("--v5_encoder", default="conv_nomask_hybrid", choices=["conv_transformer_unified", "conv_nomask_hybrid", "transformer_nomask"])
     a("--v5_fusion", default="weighted", choices=["simple", "attention", "gating", "weighted"])
+    a("--label_len", type=int, default=48, help="TSLib models")
+    a("--factor", type=int, default=3)
+    a("--top_k", type=int, default=5)
+    a("--num_kernels", type=int, default=6)
+    a("--moving_avg", type=int, default=25)
     a("--token_mode", default="patch", choices=["patch", "variate"])
     a("--patch_len", type=int, default=16)
     a("--stride", type=int, default=8)
@@ -75,7 +82,8 @@ def get_args(argv=None):
     a("--weight_decay", type=float, default=1e-3)
     a("--epochs", type=int, default=50)
     a("--patience", type=int, default=10)
-    a("--warmup", type=float, default=0.1, help="fraction of total steps used for linear warm-up")
+    a("--sched", default="cosine", choices=["cosine", "type1"], help="type1: TSLib halving every epoch")
+    a("--warmup", type=float, default=0.1, help="fraction of total steps used for linear warm-up (cosine)")
     a("--clip", type=float, default=5.0)
     a("--seed", type=int, default=2024)
     a("--num_workers", type=int, default=4)
@@ -127,14 +135,14 @@ def evaluate(model, loader, device, args, series=None, timing=False):
     model.eval()
     preds, trues = [], []
     batch_times = []
-    for x, y, _, emb in loader:
-        x, y = x.to(device), y.to(device)
+    for x, y, _, emb, xm in loader:
+        x, y, xm = x.to(device), y.to(device), xm.to(device)
         emb = emb.to(device) if emb.numel() else None
         if timing and device.type == "cuda":
             torch.cuda.synchronize()
         t0 = time.perf_counter()
         with torch.autocast(device.type, dtype=torch.bfloat16, enabled=bool(args.amp)):
-            out, _ = model(x, emb)
+            out, _ = model(x, emb, xm)
         if timing and device.type == "cuda":
             torch.cuda.synchronize()
         batch_times.append(time.perf_counter() - t0)
@@ -163,8 +171,10 @@ def main(argv=None):
     os.makedirs(out_dir, exist_ok=True)
     if args.model != "pact":  # baselines are trained with their own (MSE-only) objective
         args.lambda_freq = args.lambda_align = args.lambda_div = 0.0
-        if args.llm not in ("stored", "shuffled"):
+        if args.model in NEEDS_EMB and args.llm not in ("stored", "shuffled"):
             raise ValueError(f"{args.model} needs stored LLM embeddings")
+        if args.model not in NEEDS_EMB:
+            args.llm = "none"
     seed_all(args.seed)
     device = torch.device(args.device if (args.device != "cuda" or torch.cuda.is_available()) else "cpu")
 
@@ -203,8 +213,12 @@ def main(argv=None):
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     total_steps = args.epochs * len(train_loader)
     warm = max(1, int(args.warmup * total_steps))
-    sched = torch.optim.lr_scheduler.LambdaLR(
-        opt, lambda s: (s + 1) / warm if s < warm else 0.5 * (1 + math.cos(math.pi * (s - warm) / max(1, total_steps - warm))))
+    steps_per_epoch = len(train_loader)
+    if args.sched == "type1":
+        lr_lambda = lambda s: 0.5 ** (s // steps_per_epoch)  # noqa: E731
+    else:
+        lr_lambda = lambda s: (s + 1) / warm if s < warm else 0.5 * (1 + math.cos(math.pi * (s - warm) / max(1, total_steps - warm)))  # noqa: E731
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
@@ -216,11 +230,11 @@ def main(argv=None):
         t0 = time.perf_counter()
         sums = {}
         n_batches = 0
-        for x, y, _, emb in train_loader:
-            x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+        for x, y, _, emb, xm in train_loader:
+            x, y, xm = x.to(device, non_blocking=True), y.to(device, non_blocking=True), xm.to(device, non_blocking=True)
             emb = emb.to(device, non_blocking=True) if emb.numel() else None
             with torch.autocast(device.type, dtype=torch.bfloat16, enabled=bool(args.amp)):
-                pred, aux = model(x, emb)
+                pred, aux = model(x, emb, xm)
             pred = pred.float()
             mse = F.mse_loss(pred, y)
             loss = mse

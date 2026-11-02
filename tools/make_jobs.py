@@ -30,6 +30,44 @@ TIMECMA_OFFICIAL = {
     "ILI": {24: (5e-5, 16, 1, 1, 0.1, 16), 36: (1e-4, 16, 1, 1, 0.1, 16), 48: (2.5e-3, 16, 1, 1, 0.3, 16), 60: (1e-4, 32, 1, 1, 0.1, 16)},
 }
 
+# Time-Series-Library baselines: architecture settings from TSLib scripts (ETT) or the models' own
+# repositories; training follows TSLib (10 epochs, patience 3, lr halved every epoch).
+TSLIB_TRAIN = "--sched type1 --epochs 10 --patience 3 --warmup 0"
+_PT_ETT = {  # PatchTST, TSLib ETT scripts: H -> (e_layers, n_heads)
+    "ETTh1": {96: (1, 2), 192: (1, 8), 336: (1, 8), 720: (1, 16)},
+    "ETTh2": {h: (3, 4) for h in (96, 192, 336, 720)},
+    "ETTm1": {96: (1, 2), 192: (3, 2), 336: (1, 4), 720: (3, 4)},
+    "ETTm2": {96: (3, 16), 192: (3, 2), 336: (1, 4), 720: (3, 4)},
+}
+_TN = {"ETTh1": (16, 32), "ETTh2": (32, 32), "ETTm1": (64, 64), "ETTm2": (32, 32),  # TimesNet (d_model, d_ff)
+       "ECL": (256, 512), "Weather": (32, 32), "ILI": (768, 768)}
+_IT = {"ETTh1": (256, 256, 2), "ETTh2": (128, 128, 2), "ETTm1": (128, 128, 2), "ETTm2": (128, 128, 2),  # iTransformer
+       "ECL": (512, 512, 3), "Weather": (512, 512, 3), "ILI": (128, 128, 2)}
+
+
+def tslib_flags(model, ds, H):
+    lr, extra = "1e-4", ""
+    if model == "patchtst":
+        if ds in _PT_ETT:
+            e, nh = _PT_ETT[ds][H]
+            arch = f"--e_layers {e} --n_heads {nh} --d_model 512 --d_ff 2048"
+        elif ds == "ILI":
+            arch = "--e_layers 3 --n_heads 4 --d_model 16 --d_ff 128 --dropout 0.3"
+        else:
+            arch = "--e_layers 3 --n_heads 16 --d_model 128 --d_ff 256 --dropout 0.2"
+    elif model == "itransformer":
+        dm, dff, e = _IT[ds]
+        arch = f"--e_layers {e} --n_heads 8 --d_model {dm} --d_ff {dff}"
+        lr = "5e-4" if ds == "ECL" else lr
+    elif model == "timesnet":
+        dm, dff = _TN[ds]
+        arch = f"--e_layers 2 --d_model {dm} --d_ff {dff} --top_k 5 --num_kernels 6"
+    else:  # dlinear / rlinear: no architecture settings
+        arch = ""
+    label = "--label_len 18" if ds == "ILI" else "--label_len 48"
+    return f"--model {model} {arch} {label} --lr {lr} {TSLIB_TRAIN} {extra}".replace("  ", " ").strip()
+
+
 # ablation variants (relative to the chosen full configuration)
 ABLATIONS = {
     "full": "",
@@ -65,7 +103,7 @@ def cmd(ds, H, seed, tag, flags, extra):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--group", required=True, choices=["pilot", "main", "timecma", "v5", "ablation", "llm", "kproto", "kernel"])
+    p.add_argument("--group", required=True, choices=["pilot", "main", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
     p.add_argument("--datasets", default=None, help="comma list (default depends on the group)")
     p.add_argument("--seeds", default="2024")
     p.add_argument("--full", default="", help="flags of the chosen full configuration (after the pilot)")
@@ -95,6 +133,14 @@ def main():
         for ds, s in itertools.product(pick(list(DATASETS)), seeds):
             for H in DATASETS[ds]["H"]:
                 jobs.append(cmd(ds, H, s, "v5", fl, a.extra).replace("--kernel_size 7 ", ""))
+    elif a.group == "tslib":
+        for ds, s in itertools.product(pick(list(DATASETS)), seeds):
+            for H in DATASETS[ds]["H"]:
+                for m in ("patchtst", "itransformer", "timesnet"):
+                    jobs.append(cmd(ds, H, s, m, tslib_flags(m, ds, H), a.extra))
+                for m, lr in itertools.product(("dlinear", "rlinear"), ("1e-4", "1e-3", "5e-3")):
+                    fl = tslib_flags(m, ds, H).replace("--lr 1e-4", f"--lr {lr}")
+                    jobs.append(cmd(ds, H, s, f"{m}__lr{lr}", fl, a.extra))
     elif a.group == "ablation":
         for ds, s, (tag, fl) in itertools.product(pick(["ETTh2", "ETTm2", "Weather", "ECL", "ILI"]), seeds, ABLATIONS.items()):
             for H in DATASETS[ds]["H"]:

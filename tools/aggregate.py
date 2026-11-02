@@ -31,6 +31,23 @@ def collect(root, tags=None, metric_scale="norm"):
     return rows
 
 
+def select_by_val(rows):
+    """Collapse tags '<name>__<hp>' to '<name>': per (dataset, L, H) keep the hp with the lowest mean val MSE."""
+    best = {}
+    for (ds, tag, L, H), runs in rows.items():
+        if "__" not in tag:
+            continue
+        base = tag.split("__")[0]
+        v = float(np.mean([r["val_mse"] for r in runs]))
+        k = (ds, base, L, H)
+        if k not in best or v < best[k][0]:
+            best[k] = (v, tag)
+    out = {k: v for k, v in rows.items() if "__" not in k[1]}
+    for (ds, base, L, H), (_, tag) in best.items():
+        out[(ds, base, L, H)] = [dict(r, chosen=tag) for r in rows[(ds, tag, L, H)]]
+    return out
+
+
 def summarise(rows):
     out = []
     for (ds, tag, L, H), runs in sorted(rows.items()):
@@ -69,9 +86,15 @@ def main():
     p.add_argument("--scale", default="norm", choices=["norm", "raw"])
     p.add_argument("--format", default="md", choices=["md", "csv", "latex"])
     p.add_argument("--digits", type=int, default=3)
+    p.add_argument("--no_select", action="store_true", help="keep '<name>__<hp>' variants separate")
     a = p.parse_args()
     tags = a.tags.split(",") if a.tags else None
-    summ = summarise(collect(a.root, tags, a.scale))
+    rows = collect(a.root, None, a.scale)
+    if not a.no_select:
+        rows = select_by_val(rows)
+    if tags:
+        rows = {k: v for k, v in rows.items() if k[1] in tags}
+    summ = summarise(rows)
     if a.format == "csv":
         w = csv.DictWriter(sys.stdout, fieldnames=list(summ[0].keys()))
         w.writeheader()

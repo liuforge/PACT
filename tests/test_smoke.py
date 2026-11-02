@@ -63,7 +63,8 @@ def test_windows_cover_split(data_root):
     tr, va, te = build_datasets(s, L, 8)
     b1, b2 = s["border1s"], s["border2s"]
     assert len(te) == b2[2] - b1[2] - L - 8 + 1
-    x, y, start, _ = te[len(te) - 1]
+    x, y, start, _, xm = te[len(te) - 1]
+    assert xm.shape == (L, 4) and float(xm.abs().max()) <= 0.5
     assert start + L + 8 == b2[2]  # the last test window ends exactly at the end of the series
     np.testing.assert_allclose(y.numpy(), s["scaled"][start + L:start + L + 8])
 
@@ -85,6 +86,11 @@ VARIANTS = {
     "fusion_sum": dict(fusion="sum"),
     "timecma": dict(model="timecma", d_model=8),
     "v5": dict(model="v5", d_model=16, kernel_size=25),
+    "rlinear": dict(model="rlinear"),
+    "patchtst": dict(model="patchtst", label_len=8),
+    "itransformer": dict(model="itransformer", label_len=8),
+    "dlinear": dict(model="dlinear", label_len=8),
+    "timesnet": dict(model="timesnet", label_len=8, sched="type1"),
 }
 
 

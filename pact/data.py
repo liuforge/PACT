@@ -30,6 +30,15 @@ DATASETS = {
 }
 
 
+def time_features(dates):
+    """TSLib timeF features for freq='h': hour-of-day, day-of-week, day-of-month, day-of-year in [-0.5, 0.5]."""
+    if dates is None:
+        return None
+    f = [[d.hour / 23.0 - 0.5, d.weekday() / 6.0 - 0.5, (d.day - 1) / 30.0 - 0.5,
+          (d.timetuple().tm_yday - 1) / 365.0 - 0.5] for d in dates]
+    return np.asarray(f, dtype=np.float32)
+
+
 def split_borders(kind, n_rows, seq_len):
     """Return (border1s, border2s) for train/val/test, identical to the reference code bases."""
     if kind in ("ett_hour", "ett_minute"):
@@ -80,7 +89,7 @@ def load_series(dataset, root_path, seq_len, data_file=None, target="OT"):
     std = train.std(0)
     std[std == 0] = 1.0
     scaled = ((raw - mean) / std).astype(np.float32)
-    return dict(raw=raw, scaled=scaled, dates=dates, columns=cols, mean=mean, std=std,
+    return dict(raw=raw, scaled=scaled, dates=dates, marks=time_features(dates), columns=cols, mean=mean, std=std,
                 border1s=border1s, border2s=border2s, kind=kind)
 
 
@@ -122,8 +131,9 @@ class EmbeddingStore:
 
 
 class WindowDataset(Dataset):
-    def __init__(self, scaled, border1, border2, seq_len, pred_len, emb_store=None):
+    def __init__(self, scaled, border1, border2, seq_len, pred_len, emb_store=None, marks=None):
         self.data = scaled
+        self.marks = marks
         self.start = border1
         self.seq_len = seq_len
         self.pred_len = pred_len
@@ -140,9 +150,11 @@ class WindowDataset(Dataset):
         x = self.data[s:s + self.seq_len]
         y = self.data[s + self.seq_len:s + self.seq_len + self.pred_len]
         emb = self.emb[s] if self.emb is not None else np.zeros(0, dtype=np.float32)
-        return torch.from_numpy(x.copy()), torch.from_numpy(y.copy()), s, torch.from_numpy(emb)
+        xm = self.marks[s:s + self.seq_len] if self.marks is not None else np.zeros((self.seq_len, 4), np.float32)
+        return torch.from_numpy(x.copy()), torch.from_numpy(y.copy()), s, torch.from_numpy(emb), torch.from_numpy(xm.copy())
 
 
 def build_datasets(series, seq_len, pred_len, emb_store=None):
     b1, b2 = series["border1s"], series["border2s"]
-    return [WindowDataset(series["scaled"], b1[k], b2[k], seq_len, pred_len, emb_store) for k in range(3)]
+    return [WindowDataset(series["scaled"], b1[k], b2[k], seq_len, pred_len, emb_store, series.get("marks"))
+            for k in range(3)]

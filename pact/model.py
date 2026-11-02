@@ -284,7 +284,7 @@ class PACT(nn.Module):
             y = self.heads[branch](h)
         return y.permute(0, 2, 1)  # [B, H, N]
 
-    def forward(self, x, emb=None, return_details=False):
+    def forward(self, x, emb=None, x_mark=None, return_details=False):
         """x [B, L, N] (dataset-scaled); emb [B, N, d_llm] for llm in {stored, shuffled}."""
         B, _, N = x.shape
         z = self.revin.norm(x) if self.revin is not None else x

@@ -45,7 +45,7 @@ class TimeCMA(nn.Module):
         self.decoder = nn.TransformerDecoder(dec, cfg.d_layers)
         self.c_to_length = nn.Linear(C, H)
 
-    def forward(self, x, emb=None):  # x [B, L, N], emb [B, N, E]
+    def forward(self, x, emb=None, x_mark=None):  # x [B, L, N], emb [B, N, E]
         z = self.revin.norm(x).permute(0, 2, 1)  # [B, N, L]
         enc = self.ts_encoder(self.length_to_feature(z)).permute(0, 2, 1)  # [B, C, N]
         prompt = self.prompt_encoder(emb).permute(0, 2, 1)  # [B, E, N]
@@ -72,6 +72,41 @@ class V5(nn.Module):
             d_layer=cfg.d_layers, head=cfg.n_heads, kernel_size=cfg.kernel_size, learnable_decomposition=True,
             fusion_strategy=cfg.v5_fusion, ts_encoder_type=cfg.v5_encoder, n_prototypes=cfg.n_prototypes)
 
-    def forward(self, x, emb=None):
+    def forward(self, x, emb=None, x_mark=None):
         pred, aux = self.net(x, None, emb)
         return pred, ({"legacy": aux} if torch.is_tensor(aux) else {})
+
+
+class TSLib(nn.Module):
+    """PatchTST / iTransformer / DLinear / TimesNet from Time-Series-Library (MIT, see pact/tslib/)."""
+
+    def __init__(self, cfg):
+        super().__init__()
+        import importlib
+        from types import SimpleNamespace
+        name = {"patchtst": "PatchTST", "itransformer": "iTransformer", "dlinear": "DLinear", "timesnet": "TimesNet"}[cfg.model]
+        mod = importlib.import_module(f"pact.tslib.models.{name}")
+        c = SimpleNamespace(task_name="long_term_forecast", seq_len=cfg.seq_len, label_len=cfg.label_len,
+                            pred_len=cfg.pred_len, enc_in=cfg.num_vars, dec_in=cfg.num_vars, c_out=cfg.num_vars,
+                            d_model=cfg.d_model, n_heads=cfg.n_heads, e_layers=cfg.e_layers, d_layers=cfg.d_layers,
+                            d_ff=cfg.d_ff, dropout=cfg.dropout, factor=cfg.factor, embed="timeF", freq="h",
+                            activation="gelu", top_k=cfg.top_k, num_kernels=cfg.num_kernels, moving_avg=cfg.moving_avg,
+                            num_class=1, output_attention=False, use_norm=1)
+        self.net = mod.Model(c)
+
+    def forward(self, x, emb=None, x_mark=None):
+        return self.net(x, x_mark, None, None), {}
+
+
+class RLinear(nn.Module):
+    """RLinear (Li et al., 2023): RevIN + one linear map shared across variates."""
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.revin = RevIN(cfg.num_vars, affine=True)
+        self.drop = nn.Dropout(cfg.dropout)
+        self.linear = nn.Linear(cfg.seq_len, cfg.pred_len)
+
+    def forward(self, x, emb=None, x_mark=None):
+        z = self.drop(self.revin.norm(x))
+        return self.revin.denorm(self.linear(z.transpose(1, 2)).transpose(1, 2)), {}
