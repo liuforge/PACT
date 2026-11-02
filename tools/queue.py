@@ -9,6 +9,7 @@ or the same job file can be split across machines with --part i/k.
 import argparse
 import os
 import subprocess
+import sys
 import time
 
 
@@ -19,9 +20,11 @@ def main():
     p.add_argument("--per_gpu", type=int, default=1)
     p.add_argument("--part", default="0/1", help="i/k: take every k-th job starting at i (split over machines)")
     p.add_argument("--log_dir", default="logs")
+    p.add_argument("--python", default=sys.executable, help="interpreter substituted for a leading 'python '")
     a = p.parse_args()
     i, k = (int(x) for x in a.part.split("/"))
     lines = [l.strip() for l in open(a.jobs) if l.strip() and not l.startswith("#")]
+    lines = [a.python + l[len("python"):] if l.startswith("python ") else l for l in lines]
     todo = [(n, c) for n, c in enumerate(lines) if n % k == i]
     os.makedirs(a.log_dir, exist_ok=True)
     stem = os.path.splitext(os.path.basename(a.jobs))[0]
