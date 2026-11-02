@@ -7,3 +7,4 @@ data/
 checkpoints/
 *.log
 .DS_Store
+.venv312/
