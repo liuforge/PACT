@@ -21,6 +21,8 @@ from numpy.lib.format import open_memmap
 from pact.data import DATASETS, load_series
 
 TEMPLATE = "From {t1} to {t2}, the values were {values} {freq}. The total trend value was {trend}"
+# --value_norm window: each prompt shows the window z-scored per variate (scale-free, robust to level shifts)
+TEMPLATE_NORM = "From {t1} to {t2}, the standardized values were {values} {freq}. The total trend value was {trend}"
 
 
 def get_args():
@@ -33,7 +35,9 @@ def get_args():
     a("--model", default="gpt2", help="HuggingFace model id or local path (causal LM)")
     a("--random_init", type=int, default=0, help="use the architecture with random weights (control for pre-training)")
     a("--tag", default=None, help="store name; default derived from --model (+ '-randinit')")
-    a("--value_format", default="int", help="'int' (TimeCMA) or a format spec such as '.2f'")
+    a("--value_format", default=None, help="'int' (TimeCMA) or a format spec such as '.1f' (default: int / .1f)")
+    a("--value_norm", default="none", choices=["none", "window"],
+      help="none: raw values (TimeCMA); window: z-score each variate within the look-back window")
     a("--batch_size", type=int, default=256, help="prompts per forward pass")
     a("--chunk", type=int, default=512, help="windows per checkpointed chunk")
     a("--fp16", type=int, default=1)
@@ -90,7 +94,8 @@ def embed(prompts, tok, model, device, max_len):
 
 
 def paths(args):
-    tag = args.tag or (os.path.basename(args.model.rstrip("/")) + ("-randinit" if args.random_init else ""))
+    tag = args.tag or (os.path.basename(args.model.rstrip("/")) + ("-randinit" if args.random_init else "")
+                       + ("-norm" if args.value_norm == "window" else ""))
     d = os.path.join(args.out_root, args.dataset)
     os.makedirs(d, exist_ok=True)
     final = os.path.join(d, f"{tag}_L{args.seq_len}.npy")
@@ -142,11 +147,14 @@ def main():
     out_path = final if args.num_shards == 1 else final.replace(".npy", f".part{args.shard}of{args.num_shards}.npy")
     prog_path = out_path + ".progress"
 
+    if args.value_format is None:
+        args.value_format = ".1f" if args.value_norm == "window" else "int"
+    template = TEMPLATE_NORM if args.value_norm == "window" else TEMPLATE
     tok, model = load_llm(args, device)
     d_llm = model.config.hidden_size
     max_len = getattr(model.config, "n_positions", None) or getattr(model.config, "max_position_embeddings", 2048)
     meta = dict(dataset=args.dataset, seq_len=L, model=args.model, random_init=args.random_init,
-                value_format=args.value_format, template=TEMPLATE, freq=freq, d_llm=d_llm,
+                value_format=args.value_format, value_norm=args.value_norm, template=template, freq=freq, d_llm=d_llm,
                 n_windows=n_windows, num_vars=N, dtype="float16")
 
     if os.path.exists(prog_path):
@@ -160,8 +168,8 @@ def main():
         print("already finished")
         return
 
-    # formatted value strings, column by column (reused by every window)
-    col_strs = [[fmt_value(v, args.value_format) for v in raw[:, j]] for j in range(N)]
+    # formatted value strings, column by column (reused by every window); window-normalised prompts are per window
+    col_strs = None if args.value_norm == "window" else [[fmt_value(v, args.value_format) for v in raw[:, j]] for j in range(N)]
     date_strs = [date_str(ts, args.dataset) for ts in dates] if dates is not None else [""] * T
     t_start = time.time()
     n_trunc = 0
@@ -170,10 +178,18 @@ def main():
         e = min(hi, s + args.chunk)
         prompts, slots = [], []
         for w in range(s, e):
+            if col_strs is None:
+                win = raw[w:w + L]
+                z = (win - win.mean(0)) / (win.std(0) + 1e-5)
             for j in range(N):
-                prompts.append(TEMPLATE.format(
-                    t1=date_strs[w], t2=date_strs[w + L - 1], values=", ".join(col_strs[j][w:w + L]),
-                    freq=freq, trend=f"{float(raw[w + L - 1, j] - raw[w, j]):f}"))
+                if col_strs is None:
+                    values = ", ".join(fmt_value(v, args.value_format) for v in z[:, j])
+                    trend = f"{float(z[-1, j] - z[0, j]):.2f}"
+                else:
+                    values = ", ".join(col_strs[j][w:w + L])
+                    trend = f"{float(raw[w + L - 1, j] - raw[w, j]):f}"
+                prompts.append(template.format(t1=date_strs[w], t2=date_strs[w + L - 1], values=values,
+                                               freq=freq, trend=trend))
                 slots.append((w - lo, j))
         if s == lo + prog["done"] and prog["done"] == 0:
             n_tok = len(tok(prompts[0])["input_ids"])

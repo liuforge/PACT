@@ -134,6 +134,9 @@ def test_build_embeddings_tiny(data_root, tmp_path):
     assert arr.shape == (N_ROWS - L + 1, N_VARS, 768) and np.isfinite(arr).all() and np.abs(arr).sum(-1).min() > 0
     meta = json.load(open(tmp_path / "Toy" / f"gpt2-randinit_L{L}.json"))
     assert meta["n_windows"] == N_ROWS - L + 1
+    subprocess.run(cmd + ["--value_norm", "window"], check=True, cwd=ROOT, capture_output=True)
+    arr2 = np.load(tmp_path / "Toy" / f"gpt2-randinit-norm_L{L}.npy")
+    assert arr2.shape == arr.shape and not np.allclose(arr, arr2)
 
 
 def test_prompt_offset(data_root):
