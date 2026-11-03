@@ -100,6 +100,13 @@ SCREEN = {
     "kv_xvar_tlin": "--pdpl_mode kv --bdca_xvar 1 --trend_head linear",
     "kv_xvar_tlin_noalign": "--pdpl_mode kv --bdca_xvar 1 --trend_head linear --lambda_align 0",
 }
+SCREEN2 = {  # second batch (run in parallel on another machine); "plain" is the reference without PACT components
+    "plain": "--decomp none --pdpl 0 --llm none",
+    "kv_tlin": "--pdpl_mode kv --trend_head linear",
+    "xvar_tlin": "--bdca_xvar 1 --trend_head linear",
+    "kv_xvar_tlin_b2": "--pdpl_mode kv --bdca_xvar 1 --trend_head linear --bdca_iters 2",
+    "kv_xvar_tlin_K64": "--pdpl_mode kv --bdca_xvar 1 --trend_head linear --n_prototypes 64",
+}
 
 # ablation variants (relative to the chosen full configuration)
 ABLATIONS = {
@@ -137,7 +144,7 @@ def cmd(ds, H, seed, tag, flags, extra):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main1", "main2", "long", "long2", "fewshot", "screen", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
+    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main1", "main2", "long", "long2", "fewshot", "screen", "screen2", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
     p.add_argument("--datasets", default=None, help="comma list (default depends on the group)")
     p.add_argument("--seeds", default="2024")
     p.add_argument("--full", default="", help="flags of the chosen full configuration (after the pilot)")
@@ -213,8 +220,8 @@ def main():
                 hp = chosen[ds][H]
                 jobs.append(cmd(ds, H, s, f"L512_pact__{hp_tag(*hp)}", f"{FULL} {hp_flags(*hp)} --prompt_len 96",
                                 a.extra).replace(f"--seq_len {DATASETS[ds]['L']}", "--seq_len 512"))
-    elif a.group == "screen":
-        for ds, (tag, fl) in itertools.product(pick(list(DATASETS)), SCREEN.items()):
+    elif a.group in ("screen", "screen2"):
+        for ds, (tag, fl) in itertools.product(pick(list(DATASETS)), (SCREEN if a.group == "screen" else SCREEN2).items()):
             for H in (DATASETS[ds]["H"][0], DATASETS[ds]["H"][2]):
                 jobs.append(cmd(ds, H, 2024, f"scr_{tag}", f"{full(ds, H)} {fl}".strip(), a.extra))
     elif a.group == "fewshot":  # does the LLM prior matter more when training data are scarce?
