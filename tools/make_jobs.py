@@ -127,7 +127,8 @@ def main():
     elif a.group == "main":
         for ds, s in itertools.product(pick(list(DATASETS)), seeds):
             for H in DATASETS[ds]["H"]:
-                jobs.append(cmd(ds, H, s, "pact", a.full, a.extra))
+                for lr in ("1e-4", "5e-4"):  # chosen on validation per (dataset, H) by tools/aggregate.py
+                    jobs.append(cmd(ds, H, s, f"pact__lr{lr}", f"{a.full} --lr {lr}".strip(), a.extra))
     elif a.group == "timecma":  # official TimeCMA hyper-parameters, re-run under our protocol
         for ds, s in itertools.product(pick(list(DATASETS)), seeds):
             for H in DATASETS[ds]["H"]:
