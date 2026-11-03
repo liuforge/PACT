@@ -103,7 +103,7 @@ def cmd(ds, H, seed, tag, flags, extra):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--group", required=True, choices=["pilot", "main", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
+    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
     p.add_argument("--datasets", default=None, help="comma list (default depends on the group)")
     p.add_argument("--seeds", default="2024")
     p.add_argument("--full", default="", help="flags of the chosen full configuration (after the pilot)")
@@ -117,6 +117,13 @@ def main():
         for ds, mode, lr in itertools.product(pick(["ETTh1", "ETTm2", "Weather", "ILI"]), ["patch", "variate"], ["1e-4", "5e-4"]):
             for H in (DATASETS[ds]["H"][0], DATASETS[ds]["H"][2]):
                 jobs.append(cmd(ds, H, seeds[0], f"pilot_{mode}_lr{lr}", f"--token_mode {mode} --lr {lr}", a.extra))
+    elif a.group == "pilot2":  # capacity / regularisation on the small datasets (patch layout), one seed
+        for ds in pick(["ETTh1", "ETTh2", "ETTm1", "ILI"]):
+            lr = "5e-4" if ds == "ILI" else "1e-4"
+            for dm, do, ffn in itertools.product([64, 128], [0.1, 0.3], [0, 1]):
+                for H in (DATASETS[ds]["H"][0], DATASETS[ds]["H"][2]):
+                    fl = f"--token_mode patch --lr {lr} --d_model {dm} --d_ff {2 * dm} --dropout {do} --bdca_ffn {ffn}"
+                    jobs.append(cmd(ds, H, seeds[0], f"pilot2_d{dm}_do{do}_ffn{ffn}", fl, a.extra))
     elif a.group == "main":
         for ds, s in itertools.product(pick(list(DATASETS)), seeds):
             for H in DATASETS[ds]["H"]:
