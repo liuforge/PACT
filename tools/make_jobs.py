@@ -133,6 +133,8 @@ LLM_CONTROLS = {
     "llm_learned": "--llm learned",
     "llm_random": "--llm random",
     "llm_none": "--llm none",
+    "llm_varstatic": "--llm stored --emb_tag gpt2-var --emb_static 1",  # dataset + variable description only
+    "llm_varnorm": "--llm stored --emb_tag gpt2-var-norm",              # description + normalised window
 }
 
 

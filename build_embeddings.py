@@ -19,6 +19,7 @@ import torch
 from numpy.lib.format import open_memmap
 
 from pact.data import DATASETS, load_series
+from pact.semantics import variable_sentence
 
 TEMPLATE = "From {t1} to {t2}, the values were {values} {freq}. The total trend value was {trend}"
 # --value_norm window: each prompt shows the window z-scored per variate (scale-free, robust to level shifts)
@@ -38,6 +39,9 @@ def get_args():
     a("--value_format", default=None, help="'int' (TimeCMA) or a format spec such as '.1f' (default: int / .1f)")
     a("--value_norm", default="none", choices=["none", "window"],
       help="none: raw values (TimeCMA); window: z-score each variate within the look-back window")
+    a("--prompt", default="values", choices=["values", "variable", "variable_values"],
+      help="values: window prompt only; variable: static description of the dataset and the variable "
+           "(one embedding per variate, stored as <tag>_static.npy); variable_values: description + window prompt")
     a("--batch_size", type=int, default=256, help="prompts per forward pass")
     a("--chunk", type=int, default=512, help="windows per checkpointed chunk")
     a("--fp16", type=int, default=1)
@@ -95,7 +99,8 @@ def embed(prompts, tok, model, device, max_len):
 
 def paths(args):
     tag = args.tag or (os.path.basename(args.model.rstrip("/")) + ("-randinit" if args.random_init else "")
-                       + ("-norm" if args.value_norm == "window" else ""))
+                       + {"values": "", "variable": "-var", "variable_values": "-var"}[args.prompt]
+                       + ("-norm" if args.value_norm == "window" and args.prompt != "variable" else ""))
     d = os.path.join(args.out_root, args.dataset)
     os.makedirs(d, exist_ok=True)
     final = os.path.join(d, f"{tag}_L{args.seq_len}.npy")
@@ -152,6 +157,15 @@ def main():
     template = TEMPLATE_NORM if args.value_norm == "window" else TEMPLATE
     tok, model = load_llm(args, device)
     d_llm = model.config.hidden_size
+    var_text = [variable_sentence(args.dataset, c, j) for j, c in enumerate(series["columns"])]
+    if args.prompt == "variable":  # static: one prompt per variate
+        vec, _ = embed(var_text, tok, model, device, 1024)
+        static = final.replace(f"_L{L}.npy", "_static.npy")
+        np.save(static, vec.astype(np.float16))
+        json.dump(dict(dataset=args.dataset, model=args.model, random_init=args.random_init, prompts=var_text,
+                       d_llm=d_llm, num_vars=N, dtype="float16"), open(static.replace(".npy", ".json"), "w"), indent=1)
+        print(f"example: {var_text[-1]}\ndone -> {static} {vec.shape}")
+        return
     max_len = getattr(model.config, "n_positions", None) or getattr(model.config, "max_position_embeddings", 2048)
     meta = dict(dataset=args.dataset, seq_len=L, model=args.model, random_init=args.random_init,
                 value_format=args.value_format, value_norm=args.value_norm, template=template, freq=freq, d_llm=d_llm,
@@ -188,8 +202,8 @@ def main():
                 else:
                     values = ", ".join(col_strs[j][w:w + L])
                     trend = f"{float(raw[w + L - 1, j] - raw[w, j]):f}"
-                prompts.append(template.format(t1=date_strs[w], t2=date_strs[w + L - 1], values=values,
-                                               freq=freq, trend=trend))
+                p = template.format(t1=date_strs[w], t2=date_strs[w + L - 1], values=values, freq=freq, trend=trend)
+                prompts.append(var_text[j] + " " + p if args.prompt == "variable_values" else p)
                 slots.append((w - lo, j))
         if s == lo + prog["done"] and prog["done"] == 0:
             n_tok = len(tok(prompts[0])["input_ids"])

@@ -39,6 +39,7 @@ def get_args(argv=None):
     a("--train_percent", type=int, default=100, help="few-shot: use the first p%% of the training windows")
     a("--emb_root", default="./embeddings")
     a("--emb_tag", default="gpt2", help="embedding store name: {emb_root}/{dataset}/{emb_tag}_L{prompt_len}.npy")
+    a("--emb_static", type=int, default=0, help="use {emb_tag}_static.npy: one embedding per variate (no window info)")
     a("--prompt_len", type=int, default=None, help="steps described by the LLM prompt (default seq_len); the "
       "prompt covers the last prompt_len steps of the window, e.g. L=512 with the L=96 store")
     # model
@@ -197,13 +198,21 @@ def main(argv=None):
         args.prompt_len = args.prompt_len or args.seq_len
         if args.prompt_len > args.seq_len:
             raise ValueError("prompt_len cannot exceed seq_len")
-        path = os.path.join(args.emb_root, args.dataset, f"{args.emb_tag}_L{args.prompt_len}.npy")
-        if os.path.exists(path + ".progress") and not json.load(open(path + ".progress"))["finished"]:
-            raise RuntimeError(f"embedding store {path} is still being built")
-        store = EmbeddingStore(path, in_memory=bool(args.emb_in_memory))
-        n_expected = series["raw"].shape[0] - args.prompt_len + 1
-        if len(store) != n_expected or store.arr.shape[1] != args.num_vars:
-            raise ValueError(f"embedding store {path} has shape {store.arr.shape}, expected [{n_expected}, {args.num_vars}, d]")
+        if args.emb_static:
+            path = os.path.join(args.emb_root, args.dataset, f"{args.emb_tag}_static.npy")
+            store = EmbeddingStore(path, static=True)
+            if store.arr.shape[0] != args.num_vars:
+                raise ValueError(f"static store {path} has shape {store.arr.shape}, expected [{args.num_vars}, d]")
+        else:
+            path = os.path.join(args.emb_root, args.dataset, f"{args.emb_tag}_L{args.prompt_len}.npy")
+            if os.path.exists(path + ".progress") and not json.load(open(path + ".progress"))["finished"]:
+                raise RuntimeError(f"embedding store {path} is still being built")
+            store = EmbeddingStore(path, in_memory=bool(args.emb_in_memory))
+            n_expected = series["raw"].shape[0] - args.prompt_len + 1
+            if len(store) != n_expected or store.arr.shape[1] != args.num_vars:
+                raise ValueError(f"embedding store {path} has shape {store.arr.shape}, expected [{n_expected}, {args.num_vars}, d]")
+        if args.llm == "shuffled" and args.emb_static:
+            raise ValueError("shuffled control needs window embeddings")
         if args.llm == "shuffled":  # pre-trained embeddings of a *different* window: breaks sample alignment
             store.index_map = np.random.default_rng(args.seed).permutation(len(store))
         args.d_llm = store.d_llm

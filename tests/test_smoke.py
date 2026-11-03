@@ -36,6 +36,7 @@ def data_root(tmp_path_factory):
     emb_dir = root / "emb" / "Toy"
     emb_dir.mkdir(parents=True)
     np.save(emb_dir / f"fake_L{L}.npy", rng.normal(size=(N_ROWS - L + 1, N_VARS, 48)).astype(np.float16))
+    np.save(emb_dir / "fakestatic_static.npy", rng.normal(size=(N_VARS, 48)).astype(np.float16))
     return root
 
 
@@ -88,6 +89,7 @@ VARIANTS = {
     "v5": dict(model="v5", d_model=16, kernel_size=25),
     "long_context": dict(seq_len=64, prompt_len=L),
     "fewshot": dict(train_percent=25),
+    "static_emb": dict(emb_static=1, emb_tag="fakestatic"),
     "pdpl_kv": dict(pdpl_mode="kv"),
     "pdpl_cos": dict(pdpl_mode="cos", bdca_xvar=1),
     "bdca_xvar": dict(bdca_xvar=1),
@@ -142,6 +144,9 @@ def test_build_embeddings_tiny(data_root, tmp_path):
     assert arr.shape == (N_ROWS - L + 1, N_VARS, 768) and np.isfinite(arr).all() and np.abs(arr).sum(-1).min() > 0
     meta = json.load(open(tmp_path / "Toy" / f"gpt2-randinit_L{L}.json"))
     assert meta["n_windows"] == N_ROWS - L + 1
+    subprocess.run(cmd + ["--prompt", "variable"], check=True, cwd=ROOT, capture_output=True)
+    st = np.load(tmp_path / "Toy" / "gpt2-randinit-var_static.npy")
+    assert st.shape == (N_VARS, 768) and np.isfinite(st).all()
     subprocess.run(cmd + ["--value_norm", "window"], check=True, cwd=ROOT, capture_output=True)
     arr2 = np.load(tmp_path / "Toy" / f"gpt2-randinit-norm_L{L}.npy")
     assert arr2.shape == arr.shape and not np.allclose(arr, arr2)
