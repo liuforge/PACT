@@ -15,6 +15,7 @@ import types
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pact.data import load_series  # noqa: E402
@@ -37,9 +38,14 @@ class Toto2:
     @torch.no_grad()
     def __call__(self, ctx, H):  # ctx [B, Lc, N] -> [B, H, N]
         target = torch.as_tensor(ctx, device=self.device).transpose(1, 2).contiguous()
-        q = self.model.forecast({"target": target, "target_mask": torch.ones_like(target, dtype=torch.bool),
+        mask = torch.ones_like(target, dtype=torch.bool)
+        pad = -target.shape[-1] % 32  # the context must be a whole number of patches: left-pad as missing values
+        if pad:
+            target = F.pad(target, (pad, 0))
+            mask = F.pad(mask, (pad, 0), value=False)
+        q = self.model.forecast({"target": target, "target_mask": mask,
                                  "series_ids": torch.zeros(target.shape[:2], dtype=torch.long, device=self.device)},
-                                horizon=H, decode_block_size=768, has_missing_values=False)
+                                horizon=H, decode_block_size=768, has_missing_values=bool(pad))
         return q[4].transpose(1, 2).float().cpu().numpy()  # median quantile
 
 
