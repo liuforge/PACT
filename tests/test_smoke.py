@@ -167,3 +167,13 @@ def test_train_percent(data_root):
     full, va, te = build_datasets(s, L, 8)
     few, va2, te2 = build_datasets(s, L, 8, train_percent=25)
     assert len(few) == (len(full) + 8 - 1) * 25 // 100 - 8 + 1 and len(va2) == len(va) and len(te2) == len(te)
+
+
+def test_transfer_eval(data_root, tmp_path):
+    """--eval_datasets evaluates the trained model on another dataset with the same number of variates."""
+    import shutil
+    shutil.copy(data_root / "toy.csv", data_root / "Toy2.csv")
+    (data_root / "emb" / "Toy2").mkdir(exist_ok=True)
+    shutil.copy(data_root / "emb" / "Toy" / f"fake_L{L}.npy", data_root / "emb" / "Toy2" / f"fake_L{L}.npy")
+    res = train.main(base_args(data_root, tmp_path, eval_datasets="Toy2"))
+    assert abs(res["transfer"]["Toy2"]["mse"] - res["test"]["mse"]) < 1e-6  # identical data -> identical error

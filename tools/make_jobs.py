@@ -147,7 +147,7 @@ def cmd(ds, H, seed, tag, flags, extra):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main1", "main2", "long", "long2", "fewshot", "screen", "screen2", "viz", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
+    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main1", "main2", "long", "long2", "fewshot", "screen", "screen2", "viz", "transfer", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
     p.add_argument("--datasets", default=None, help="comma list (default depends on the group)")
     p.add_argument("--seeds", default="2024")
     p.add_argument("--full", default="", help="flags of the chosen full configuration (after the pilot)")
@@ -227,6 +227,12 @@ def main():
         for ds, (tag, fl) in itertools.product(pick(list(DATASETS)), (SCREEN if a.group == "screen" else SCREEN2).items()):
             for H in (DATASETS[ds]["H"][0], DATASETS[ds]["H"][2]):
                 jobs.append(cmd(ds, H, 2024, f"scr_{tag}", f"{full(ds, H)} {fl}".strip(), a.extra))
+    elif a.group == "transfer":  # zero-shot cross-domain pairs of Time-LLM (source -> targets)
+        pairs = {"ETTh1": "ETTh2,ETTm2", "ETTh2": "ETTh1,ETTm2", "ETTm1": "ETTh2,ETTm2", "ETTm2": "ETTh2,ETTm1"}
+        conds = [("gpt2", "--llm stored --emb_tag gpt2-norm"), ("none", "--llm none"), ("learned", "--llm learned")]
+        for src, s, (tag, fl) in itertools.product(pick(list(pairs)), seeds, conds):
+            for H in DATASETS[src]["H"]:
+                jobs.append(cmd(src, H, s, f"tr_{tag}", f"{full(src, H)} {fl} --eval_datasets {pairs[src]}", a.extra))
     elif a.group == "viz":  # checkpoints for prototype projection (extract_prototypes.py)
         for ds in pick(list(DATASETS)):
             H = DATASETS[ds]["H"][0]

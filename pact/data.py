@@ -58,9 +58,12 @@ def split_borders(kind, n_rows, seq_len):
 def resolve_csv(dataset, root_path, data_file=None):
     if data_file:
         return data_file if os.path.isabs(data_file) else os.path.join(root_path, data_file)
-    rel = DATASETS[dataset][0]
     # registry layout (root/electricity/electricity.csv), flat layout (root/electricity.csv), TimeCMA layout (root/ECL.csv)
-    candidates = [rel, os.path.basename(rel), f"{dataset}.csv"]
+    if dataset in DATASETS:
+        rel = DATASETS[dataset][0]
+        candidates = [rel, os.path.basename(rel), f"{dataset}.csv"]
+    else:
+        candidates = [f"{dataset}.csv"]
     for c in candidates:
         if os.path.exists(os.path.join(root_path, c)):
             return os.path.join(root_path, c)

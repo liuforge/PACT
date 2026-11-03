@@ -106,6 +106,8 @@ def get_args(argv=None):
     a("--overwrite", type=int, default=0)
     a("--save_ckpt", type=int, default=0)
     a("--save_preds", type=int, default=0)
+    a("--eval_datasets", default="", help="cross-domain zero-shot: also evaluate the trained model on the test "
+      "split of these datasets (same number of variates; their own z-scoring and prompt embeddings)")
     return p.parse_args(argv)
 
 
@@ -311,10 +313,30 @@ def main(argv=None):
     if args.save_preds:
         np.savez_compressed(os.path.join(out_dir, "test_preds.npz"), pred=pred.astype(np.float32), true=true.astype(np.float32))
 
+    transfer = {}
+    for tgt in [t for t in args.eval_datasets.split(",") if t]:
+        ts = load_series(tgt, args.root_path, args.seq_len)
+        if ts["raw"].shape[1] != args.num_vars:
+            raise ValueError(f"{tgt} has {ts['raw'].shape[1]} variates, model expects {args.num_vars}")
+        tstore = None
+        if store is not None:
+            if args.emb_static:
+                tstore = EmbeddingStore(os.path.join(args.emb_root, tgt, f"{args.emb_tag}_static.npy"), static=True)
+            else:
+                tstore = EmbeddingStore(os.path.join(args.emb_root, tgt, f"{args.emb_tag}_L{args.prompt_len}.npy"))
+            if args.llm == "shuffled":
+                tstore.index_map = np.random.default_rng(args.seed).permutation(len(tstore))
+        _, _, tt = build_datasets(ts, args.seq_len, args.pred_len, tstore, args.prompt_len)
+        tl = DataLoader(tt, shuffle=False, drop_last=False, **{k: v for k, v in kw.items() if k != "persistent_workers"})
+        transfer[tgt], _, _ = evaluate(model, tl, device, args, ts)
+        print(f"TRANSFER {args.dataset}->{tgt} H={args.pred_len} [{args.tag}] mse {transfer[tgt]['mse']:.4f}", flush=True)
+
     cfg = {k: v for k, v in vars(args).items()}
     results = dict(config=cfg, git=git_rev(), n_params=n_params, best_epoch=best_epoch,
                    epochs_run=len(history), train_s_per_epoch=float(np.mean(epoch_times)),
                    peak_mem_mib=peak_mem, val=val, test=test, history=history)
+    if transfer:
+        results["transfer"] = transfer
     if hasattr(model, "diagnostics"):  # internal statistics on one validation batch
         model.eval()
         with torch.no_grad():
