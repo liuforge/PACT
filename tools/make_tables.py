@@ -81,6 +81,7 @@ def main_table(R, models, caption, label):
              " ".join(rf"\cmidrule(lr){{{3 + 2 * i}-{4 + 2 * i}}}" for i in range(len(models))),
              "Dataset & $H$ & " + " & ".join(["MSE & MAE"] * len(models)) + r" \\", r"\midrule"]
     wins = collections.Counter()
+    gaps = gap_to_best(R, models)
     for ds in DATASETS:
         rows = []
         for H in horizons(ds) + ["Avg"]:
@@ -107,7 +108,100 @@ def main_table(R, models, caption, label):
             lines += rows + [r"\midrule"]
     lines[-1] = r"\midrule"
     lines.append(r"\multicolumn{2}{l}{1st count (MSE)} & " + " & ".join(rf"\multicolumn{{2}}{{c}}{{{wins[t]}}}" for t, _ in models) + r" \\")
+    lines.append(r"\multicolumn{2}{l}{Median gap to best (MSE)} & " + " & ".join(
+        rf"\multicolumn{{2}}{{c}}{{{gaps[t]:+.1f}\%}}" if t in gaps else r"\multicolumn{2}{c}{--}" for t, _ in models) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table*}"]
+    return "\n".join(lines)
+
+
+def gap_to_best(R, models):
+    """Median relative excess of test MSE over the best model of each (dataset, horizon) cell. Cells are those where
+    every trained model has results; the best is taken over all models present in the cell, and a zero-shot model
+    is averaged over the cells it has."""
+    trained = [t for t, _ in models if not t.startswith("zs_")]
+    cells = [(ds, H) for ds in DATASETS for H in horizons(ds) if all((ds, t, H) in R for t in trained)]
+    out = {}
+    for t, _ in models:
+        g = [mean(R[(ds, t, H)], "mse") / min(mean(R[(ds, u, H)], "mse") for u, _ in models if (ds, u, H) in R) - 1
+             for ds, H in cells if (ds, t, H) in R]
+        if g:
+            out[t] = 100 * np.median(g)  # median: one diverging zero-shot cell must not dominate
+    return out
+
+
+def spearman(a, b):
+    ra, rb = np.argsort(np.argsort(a)), np.argsort(np.argsort(b))
+    return float(np.corrcoef(ra, rb)[0, 1])
+
+
+def versus_table(R, ours, baselines, caption, label):
+    """Relative test-MSE difference of ours vs. each baseline per dataset (negative = ours better), paired over
+    (horizon, seed); Wilcoxon p in parentheses when a dataset has at least six pairs."""
+    dss = [ds for ds in DATASETS if any((ds, ours, H) in R for H in horizons(ds))]
+    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+             r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l " + "c " * (len(dss) + 1) + "}", r"\toprule",
+             "vs. & " + " & ".join(dss) + r" & All \\", r"\midrule"]
+    for tag, name in baselines:
+        row, allx, ally = [], [], []
+        for ds in dss:
+            x, y = [], []
+            for H in horizons(ds):
+                b = {r["seed"]: r["mse"] for r in R.get((ds, tag, H), [])}
+                o = R.get((ds, ours, H), [])
+                if tag.startswith("zs_") and b and o:  # deterministic zero-shot: one pair per horizon (seed mean)
+                    x.append(np.mean(list(b.values())))
+                    y.append(mean(o, "mse"))
+                    continue
+                for r in o:
+                    if r["seed"] in b:
+                        x.append(b[r["seed"]])
+                        y.append(r["mse"])
+            if not x:
+                row.append("--")
+                continue
+            x, y = np.array(x), np.array(y)
+            allx += list(x)
+            ally += list(y)
+            cell = f"{np.mean((y - x) / x) * 100:+.1f}\\%"
+            if len(x) >= 6:
+                cell += f" ({wilcoxon(x, y).pvalue:.3f})"
+            row.append(cell)
+        x, y = np.array(allx), np.array(ally)
+        row.append(f"{np.mean((y - x) / x) * 100:+.1f}\\% ({wilcoxon(x, y).pvalue:.3f})" if len(x) >= 6 else "--")
+        lines.append(f"{name} & " + " & ".join(row) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
+    return "\n".join(lines)
+
+
+def val_test_table(roots, caption, label):
+    """How well does validation MSE rank test MSE? Spearman correlation over every trained run (all models,
+    configurations and seeds; full training data, L = 96) of each (dataset, horizon)."""
+    pts = collections.defaultdict(list)
+    for root in roots:
+        for f in glob.glob(os.path.join(root, "*", "*", "*", "results.json")):
+            r = json.load(open(f))
+            c = r["config"]
+            if c["tag"].startswith(("zs_", "fs", "tr_", "L512")) or c.get("train_percent", 100) != 100:
+                continue
+            if c["seq_len"] != (36 if c["dataset"] == "ILI" else 96) or c.get("llm") == "stored" and "raw" in c["tag"]:
+                continue
+            key = (c["dataset"], c["pred_len"], c["tag"], c["seed"])
+            pts[key[:2]].append((key, r["val"]["mse"], r["test"]["mse"]))
+    dss = [ds for ds in DATASETS if any(k[0] == ds for k in pts)]
+    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+             r"\begin{tabular}{l " + "c " * 5 + "}", r"\toprule", r"Dataset & \multicolumn{4}{c}{Spearman $\rho$ per horizon} & runs \\", r"\midrule"]
+    for ds in dss:
+        cells, n = [], 0
+        for H in horizons(ds):
+            u = {k: (v, t) for k, v, t in pts.get((ds, H), [])}  # one point per (tag, seed)
+            if len(u) < 6:
+                cells.append("--")
+                continue
+            v = np.array(list(u.values()))
+            cells.append(f"{spearman(v[:, 0], v[:, 1]):+.2f}")
+            n += len(u)
+        lines.append(f"{ds} & " + " & ".join(cells) + f" & {n}" + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
     return "\n".join(lines)
 
 
@@ -285,6 +379,13 @@ def main():
     w("efficiency.tex", efficiency_table(R, MAIN_MODELS, "ETTm1", 96,
       "Efficiency on ETTm1 ($H=96$, measured in the same environment). PACT additionally needs a one-off offline "
       "pass of GPT-2 over the prompts (reported in the text).", "tab:efficiency"))
+    w("versus.tex", versus_table(R, "pact", [(t, n) for t, n in MAIN_MODELS[1:]],
+      "PACT against each baseline: relative difference of test MSE (negative: PACT is better), paired over horizons "
+      "and seeds; Wilcoxon signed-rank $p$ in parentheses.", "tab:versus"))
+    w("valtest.tex", val_test_table(a.root, "Rank correlation between validation and test MSE over all trained runs "
+      "(every model, configuration and seed) of each dataset and horizon. A low or negative $\\rho$ means that "
+      "validation-based selection, the only selection used in this paper, cannot be expected to pick the "
+      "configuration that is best on the test period.", "tab:valtest"))
     print(f"tables written to {a.out}; {len(R)} (dataset, model, horizon) cells")
 
 
