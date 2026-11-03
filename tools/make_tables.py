@@ -18,7 +18,7 @@ HORIZONS = {"ILI": [24, 36, 48, 60]}
 MAIN_MODELS = [  # (tag after selection, column title)
     ("pact", "PACT"), ("timecma", "TimeCMA"), ("patchtst", "PatchTST"), ("itransformer", "iTrans."),
     ("timesnet", "TimesNet"), ("dlinear", "DLinear"), ("rlinear", "RLinear"),
-    ("zs_timesfm-3.0-pytorch-znorm_ctx96", "TimesFM-3"), ("zs_Toto-2.0-313m_ctx96", "Toto-2"),
+    ("zs_timesfm-3.0-pytorch_ctx96", "TimesFM-3"), ("zs_Toto-2.0-313m_ctx96", "Toto-2"),
     ("zs_TimeMoE-200M_ctx96", "Time-MoE"),
 ]
 
