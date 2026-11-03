@@ -103,7 +103,7 @@ def cmd(ds, H, seed, tag, flags, extra):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
+    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "long", "main", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
     p.add_argument("--datasets", default=None, help="comma list (default depends on the group)")
     p.add_argument("--seeds", default="2024")
     p.add_argument("--full", default="", help="flags of the chosen full configuration (after the pilot)")
@@ -148,6 +148,15 @@ def main():
                 for m, lr in itertools.product(("dlinear", "rlinear"), ("1e-4", "1e-3", "5e-3")):
                     fl = tslib_flags(m, ds, H).replace("--lr 1e-4", f"--lr {lr}")
                     jobs.append(cmd(ds, H, s, f"{m}__lr{lr}", fl, a.extra))
+    elif a.group == "long":  # L=512 (vs foundation models with a 512 context); the prompt covers the last 96 steps
+        for ds, s in itertools.product(pick(["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL"]), seeds):
+            for H in DATASETS[ds]["H"]:
+                c = lambda tag, fl: cmd(ds, H, s, tag, fl, a.extra).replace(f"--seq_len {DATASETS[ds]['L']}", "--seq_len 512")  # noqa: E731
+                for lr in ("1e-4", "5e-4"):
+                    jobs.append(c(f"L512_pact__lr{lr}", f"{a.full} --prompt_len 96 --lr {lr}".strip()))
+                jobs.append(c("L512_patchtst", tslib_flags("patchtst", ds, H)))
+                for lr in ("1e-4", "1e-3", "5e-3"):
+                    jobs.append(c(f"L512_rlinear__lr{lr}", tslib_flags("rlinear", ds, H).replace("--lr 1e-4", f"--lr {lr}")))
     elif a.group == "ablation":
         for ds, s, (tag, fl) in itertools.product(pick(["ETTh2", "ETTm2", "Weather", "ECL", "ILI"]), seeds, ABLATIONS.items()):
             for H in DATASETS[ds]["H"]:
