@@ -12,6 +12,7 @@ case $role in
   dev)      DS="ETTh1,ETTh2,ILI";      GPUS=0;   PER=6; EMB_PROCS=1; LLM_DS="ETTh1,ETTh2,ILI"; ABL_DS="ETTh2,ILI"; ABL_SEEDS=2024,2025,2026; SWEEP_DS="ETTh2" ;;
   explore)  DS="ETTm1,ETTm2,Weather";  GPUS=0,1; PER=4; EMB_PROCS=2; LLM_DS="ETTm2,Weather";   ABL_DS="ETTm2,Weather"; ABL_SEEDS=2024,2025,2026; SWEEP_DS="Weather" ;;
   training) DS="ECL";                  GPUS=0;   PER=3; EMB_PROCS=3; LLM_DS="";                ABL_DS="ECL"; ABL_SEEDS=2024; SWEEP_DS="" ;;
+  long)     DS="ETTh1,ETTh2,ETTm1,ETTm2,Weather"; GPUS=0; PER=6; EMB_PROCS=2; LLM_DS="" ;;  # L=512 comparison
   *) echo "unknown role $role"; exit 1 ;;
 esac
 L_OF() { [ "$1" = ILI ] && echo 36 || echo 96; }
@@ -38,6 +39,17 @@ for ds in ${LLM_DS//,/ }; do  # controls: random-init GPT-2 (normalised prompt) 
   [ -f embeddings/$ds/gpt2-randinit-norm_L$(L_OF $ds).json ] || emb_sharded $ds --value_norm window --random_init 1
   [ -f embeddings/$ds/gpt2_L$(L_OF $ds).json ] || emb_sharded $ds
 done
+if [ $role = long ]; then  # L=512: grid on seed 2024 -> choose -> two more seeds (PatchTST/RLinear included)
+  $PY tools/make_jobs.py --group long --datasets $DS --extra "$X" > jobs/long1.txt
+  $PY tools/queue.py jobs/long1.txt --gpus $GPUS --per_gpu $PER > logs/queue_long1.log 2>&1
+  $PY tools/choose.py --root results --prefix L512_pact__ > chosen/long.json
+  { $PY tools/make_jobs.py --group long2 --datasets $DS --seeds 2024,2025,2026 --chosen chosen/long.json --extra "$X"
+    $PY tools/make_jobs.py --group long --datasets $DS --extra "$X" | grep -v "L512_pact__" | sed "s/--seed 2024/--seed 2025/"
+    $PY tools/make_jobs.py --group long --datasets $DS --extra "$X" | grep -v "L512_pact__" | sed "s/--seed 2024/--seed 2026/"
+  } > jobs/long2.txt
+  $PY tools/queue.py jobs/long2.txt --gpus $GPUS --per_gpu $PER > logs/queue_long2.log 2>&1
+  echo "[$(date)] done"; exit 0
+fi
 echo "[$(date)] main1"
 $PY tools/make_jobs.py --group main1 --datasets $DS --extra "$X" > jobs/main1_$role.txt
 $PY tools/queue.py jobs/main1_$role.txt --gpus $GPUS --per_gpu $PER > logs/queue_main1_$role.log 2>&1
