@@ -205,9 +205,9 @@ def main(argv=None):
         args.d_llm = getattr(args, "d_llm", None) or 768
 
     train_set, val_set, test_set = build_datasets(series, args.seq_len, args.pred_len, store, args.prompt_len)
-    if store is not None and args.num_workers > 0 and os.path.isdir("/dev/shm"):
+    if args.num_workers > 0 and os.path.isdir("/dev/shm"):
         st = os.statvfs("/dev/shm")
-        if st.f_frsize * st.f_blocks < 512 * 2 ** 20:  # containers with a 64 MB /dev/shm cannot pass embedding batches
+        if st.f_frsize * st.f_blocks < 512 * 2 ** 20:  # containers with a 64 MB /dev/shm cannot pass large batches
             print(f"/dev/shm is {st.f_frsize * st.f_blocks / 2 ** 20:.0f} MiB: loading data in the main process")
             args.num_workers = 0
     kw = dict(batch_size=args.batch_size, num_workers=args.num_workers, pin_memory=device.type == "cuda",
