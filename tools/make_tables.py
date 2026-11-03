@@ -18,8 +18,8 @@ HORIZONS = {"ILI": [24, 36, 48, 60]}
 MAIN_MODELS = [  # (tag after selection, column title)
     ("pact", "PACT"), ("timecma", "TimeCMA"), ("patchtst", "PatchTST"), ("itransformer", "iTrans."),
     ("timesnet", "TimesNet"), ("dlinear", "DLinear"), ("rlinear", "RLinear"),
-    ("zs_timesfm-3.0-pytorch_ctx96", "TimesFM-3"), ("zs_Toto-2.0-313m_ctx96", "Toto-2"),
-    ("zs_TimeMoE-200M_ctx96", "Time-MoE"),
+    ("zs_timesfm-3.0-pytorch_ctxL", "TimesFM-3"), ("zs_Toto-2.0-313m_ctxL", "Toto-2"),
+    ("zs_TimeMoE-200M_ctxL", "Time-MoE"),
 ]
 
 
@@ -33,7 +33,10 @@ def load(root, select_seed=2024):
     for f in glob.glob(os.path.join(root, "*", "*", "*", "results.json")):
         r = json.load(open(f))
         c = r["config"]
-        raw[(c["dataset"], c["tag"], c["pred_len"])].append(dict(
+        tag = c["tag"]
+        if tag.startswith("zs_") and tag.endswith(f"_ctx{c['seq_len']}"):  # same context as the protocol look-back
+            tag = tag[: tag.rindex("_ctx")] + "_ctxL"
+        raw[(c["dataset"], tag, c["pred_len"])].append(dict(
             seed=c["seed"], mse=r["test"]["mse"], mae=r["test"]["mae"], val=r["val"]["mse"],
             params=r.get("n_params"), epoch_s=r.get("train_s_per_epoch"), mem=r.get("peak_mem_mib"),
             infer=r["test"].get("infer_s_per_batch"), epochs=r.get("epochs_run"), transfer=r.get("transfer")))
@@ -249,7 +252,7 @@ def main():
     w = lambda name, txt: open(os.path.join(a.out, name), "w").write(txt + "\n")  # noqa: E731
     w("main.tex", main_table(R, MAIN_MODELS, "Forecasting results (test MSE/MAE, mean of three seeds; z-scored scale). "
       "All trained models are re-run with the same splits, windows and validation-based model selection; foundation "
-      "models are zero-shot with the same 96-step context. \\textbf{Bold}: best; \\underline{underline}: second.",
+      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). \\textbf{Bold}: best; \\underline{underline}: second.",
       "tab:main_results"))
     w("main_full.tex", full_table(R, MAIN_MODELS, "Test MSE (mean $\\pm$ standard deviation over three seeds).",
       "tab:detailed"))
