@@ -90,7 +90,7 @@ def get_args(argv=None):
     a("--seed", type=int, default=2024)
     a("--num_workers", type=int, default=4)
     a("--threads", type=int, default=4, help="torch intra-op threads per process (avoid CPU oversubscription)")
-    a("--emb_in_memory", type=int, default=1, help="load the embedding store into RAM instead of memmap")
+    a("--emb_in_memory", type=int, default=0, help="load the store into RAM (per process!); memmap shares the page cache")
     a("--device", default="cuda")
     a("--amp", type=int, default=0, help="bf16 autocast")
     # bookkeeping
