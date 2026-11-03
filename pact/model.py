@@ -139,19 +139,40 @@ class PromptAdapter(nn.Module):
 
 
 class PDPL(nn.Module):
-    """Prototype-based Dynamic Prompt Learning: soft retrieval over a learnable codebook + knowledge gate."""
+    """Prototype-based Dynamic Prompt Learning: soft retrieval over a learnable codebook + knowledge gate.
 
-    def __init__(self, d_model, n_prototypes):
+    mode="dot": keys = values = P, scaled dot product (first version; E_dyn is a smooth projection of H)
+    mode="kv":  separate key and value prototypes (a key-value memory over the training set), cosine
+                retrieval with a learnable temperature, so the prompt can carry information H does not contain
+    """
+
+    def __init__(self, d_model, n_prototypes, mode="dot", temp_init=10.0):
         super().__init__()
-        self.prototypes = nn.Parameter(torch.randn(n_prototypes, d_model))
+        self.mode = mode
+        self.prototypes = nn.Parameter(torch.randn(n_prototypes, d_model))  # keys (and values for "dot")
+        if mode == "kv":
+            self.values = nn.Parameter(torch.randn(n_prototypes, d_model))
+            self.log_scale = nn.Parameter(torch.tensor(math.log(temp_init)))
+        elif mode != "dot":
+            raise ValueError(mode)
         self.gate = nn.Linear(2 * d_model, d_model)
+        self.last = {}
 
     def forward(self, h, anchor=None):  # h, anchor [S, T, D]
-        attn = torch.softmax(h @ self.prototypes.t() / math.sqrt(h.shape[-1]), dim=-1)  # [S, T, K]
-        e_dyn = attn @ self.prototypes
+        if self.mode == "kv":
+            sim = F.normalize(h, dim=-1) @ F.normalize(self.prototypes, dim=-1).t()
+            attn = torch.softmax(sim * self.log_scale.exp(), dim=-1)  # [S, T, K]
+            e_dyn = attn @ self.values
+        else:
+            attn = torch.softmax(h @ self.prototypes.t() / math.sqrt(h.shape[-1]), dim=-1)
+            e_dyn = attn @ self.prototypes
+        with torch.no_grad():  # diagnostics: normalised retrieval entropy (1 = uniform) and prototype usage
+            ent = -(attn * attn.clamp_min(1e-9).log()).sum(-1).mean() / math.log(attn.shape[-1])
+            self.last = {"attn_entropy": float(ent), "usage_max": float(attn.mean((0, 1)).max())}
         if anchor is None:
             return e_dyn, attn
         lam = torch.sigmoid(self.gate(torch.cat([anchor, e_dyn], dim=-1)))
+        self.last["gate_dyn"] = float(lam.detach().mean())  # share of the dynamic prompt vs. the LLM anchor
         return lam * e_dyn + (1 - lam) * anchor, attn
 
     def diversity_loss(self):
@@ -186,22 +207,40 @@ class BDCA(nn.Module):
     then a final forward retrieval H <- Fwd_{I+1}(H, E) so the last calibrated prompt is used,
     followed by the residual gate  g * H + (1 - g) * H0.
     iters=0 reduces to a single (uni-directional) cross-attention block, i.e. the "w/o BDCA" variant.
+
+    cross_variate=True (patch layout): after the temporal calibration, the prompt tokens of every variate
+    additionally attend to the summaries (time-averaged features) of all variates of the same sample, so
+    the backward step injects inter-variate dependencies that the channel-independent encoder lacks.
     """
 
-    def __init__(self, d_model, n_heads, iters, dropout, ffn=True):
+    def __init__(self, d_model, n_heads, iters, dropout, ffn=True, cross_variate=False):
         super().__init__()
         self.iters = iters
+        self.cross_variate = cross_variate
         self.fwd = nn.ModuleList([CrossBlock(d_model, n_heads, dropout, ffn) for _ in range(iters + 1)])
         self.bwd = nn.ModuleList([CrossBlock(d_model, n_heads, dropout, ffn) for _ in range(iters)])
+        if cross_variate:
+            self.bwd_var = nn.ModuleList([CrossBlock(d_model, n_heads, dropout, ffn) for _ in range(iters)])
         self.gate = nn.Linear(2 * d_model, d_model)
+        self.last = {}
 
-    def forward(self, h0, e0):
+    def _variate_calibration(self, i, e, h, B):
+        S, T, D = e.shape
+        N = S // B
+        summary = h.mean(1).reshape(B, N, D)  # one token per variate
+        e = self.bwd_var[i](e.reshape(B, N * T, D), summary)
+        return e.reshape(S, T, D)
+
+    def forward(self, h0, e0, batch_size=None):
         h, e = h0, e0
         for i in range(self.iters):
             h = self.fwd[i](h, e)
             e = self.bwd[i](e, h)
+            if self.cross_variate and batch_size is not None:
+                e = self._variate_calibration(i, e, h, batch_size)
         h = self.fwd[-1](h, e)
         g = torch.sigmoid(self.gate(torch.cat([h0, h], dim=-1)))
+        self.last = {"gate_bdca": float(g.detach().mean())}  # share of the BDCA output vs. the encoder feature
         return g * h + (1 - g) * h0
 
 
@@ -248,13 +287,20 @@ class PACT(nn.Module):
                 g = torch.Generator().manual_seed(cfg.seed)
                 self.register_buffer("llm_vec", torch.randn(N, cfg.d_llm, generator=g))
 
-        self.pdpl = PDPL(D, cfg.n_prototypes) if cfg.pdpl else None
+        self.pdpl = PDPL(D, cfg.n_prototypes, cfg.pdpl_mode, cfg.pdpl_temp) if cfg.pdpl else None
         self.has_prompt = self.use_llm or self.pdpl is not None
         use_bdca = self.has_prompt and cfg.bdca_iters >= 0
-        self.bdca = nn.ModuleDict({b: BDCA(D, cfg.n_heads, cfg.bdca_iters, cfg.dropout, cfg.bdca_ffn)
-                                   for b in self.branches}) if use_bdca else None
+        # trend_head="linear": the trend branch is a per-variate linear map (L -> H); only the seasonal branch
+        # goes through the encoder, PDPL and BDCA (division of labour between the two streams)
+        self.linear_trend = self.decomp is not None and cfg.trend_head == "linear"
+        deep = [b for b in self.branches if not (self.linear_trend and b == "trend")]
+        xvar = bool(cfg.bdca_xvar) and cfg.token_mode == "patch"
+        self.bdca = nn.ModuleDict({b: BDCA(D, cfg.n_heads, cfg.bdca_iters, cfg.dropout, cfg.bdca_ffn, xvar)
+                                   for b in deep}) if use_bdca else None
         self.heads = nn.ModuleDict({b: nn.Sequential(nn.Dropout(cfg.head_dropout), nn.Linear(head_in, H))
-                                    for b in self.branches})
+                                    for b in deep})
+        if self.linear_trend:
+            self.trend_linear = nn.Linear(L, H)
         if self.decomp is not None:
             if cfg.fusion == "scalar":
                 self.fuse_w = nn.Parameter(torch.zeros(1))
@@ -264,6 +310,18 @@ class PACT(nn.Module):
                 raise ValueError(cfg.fusion)
         if self.has_prompt and cfg.lambda_align > 0:
             self.log_tau = nn.Parameter(torch.tensor(math.log(cfg.tau_init)))
+
+    def diagnostics(self):
+        """Last-batch internal statistics of PDPL and BDCA (attention entropy, gate openings)."""
+        out = {}
+        if self.pdpl is not None:
+            out.update({f"pdpl_{k}": v for k, v in self.pdpl.last.items()})
+        if self.bdca is not None:
+            for b, m in self.bdca.items():
+                out.update({f"{b}_{k}": v for k, v in m.last.items()})
+        if self.decomp is not None and self.cfg.fusion != "sum":
+            out["fuse_trend_weight"] = float(torch.sigmoid(self.fuse_w).mean())
+        return out
 
     def _anchor(self, emb, B):
         """[B, N, D] anchor from stored embeddings or from the control vectors."""
@@ -295,6 +353,9 @@ class PACT(nn.Module):
         details = {}
         preds = {}
         for b, xb in parts.items():
+            if self.linear_trend and b == "trend":
+                preds[b] = self.trend_linear(xb.transpose(1, 2)).transpose(1, 2)  # [B, H, N]
+                continue
             h0 = self.encoder(xb)  # [S, T, D]
             T = h0.shape[1]
             a = self._to_tokens(anchor, B, T) if anchor is not None else None
@@ -303,7 +364,7 @@ class PACT(nn.Module):
                 details[f"proto_attn_{b}"] = attn
             else:
                 e = a
-            h = self.bdca[b](h0, e) if self.bdca is not None else h0
+            h = self.bdca[b](h0, e, B if self.cfg.token_mode == "patch" else None) if self.bdca is not None else h0
             if self.training and e is not None and self.cfg.lambda_align > 0:
                 aux[f"align_{b}"] = token_infonce(h0, e, self.log_tau)
             preds[b] = self._head(h, b, B, N)

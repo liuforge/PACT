@@ -73,6 +73,10 @@ def get_args(argv=None):
     a("--n_prototypes", type=int, default=16)
     a("--bdca_iters", type=int, default=1, help="-1: no BDCA, 0: single cross-attention, I>=1: I bi-directional rounds")
     a("--bdca_ffn", type=int, default=1)
+    a("--bdca_xvar", type=int, default=0, help="BDCA backward step also calibrates prompts across variates")
+    a("--pdpl_mode", default="dot", choices=["dot", "kv"], help="kv: key-value prototype memory, cosine retrieval")
+    a("--pdpl_temp", type=float, default=10.0, help="initial retrieval temperature for pdpl_mode=kv")
+    a("--trend_head", default="full", choices=["full", "linear"], help="linear: trend branch is a linear map")
     a("--fusion", default="scalar", choices=["scalar", "variate", "sum"])
     # loss
     a("--lambda_freq", type=float, default=0.1)
@@ -301,6 +305,12 @@ def main(argv=None):
     results = dict(config=cfg, git=git_rev(), n_params=n_params, best_epoch=best_epoch,
                    epochs_run=len(history), train_s_per_epoch=float(np.mean(epoch_times)),
                    peak_mem_mib=peak_mem, val=val, test=test, history=history)
+    if hasattr(model, "diagnostics"):  # internal statistics on one validation batch
+        model.eval()
+        with torch.no_grad():
+            x, y, _, emb, xm = next(iter(val_loader))
+            model(x.to(device), emb.to(device) if emb.numel() else None, xm.to(device))
+        results["diag"] = model.diagnostics()
     decomp = getattr(model, "decomp", None)
     if decomp is not None and decomp.mode == "gaussian":
         results["learned_sigma"] = float(decomp.sigma.detach())

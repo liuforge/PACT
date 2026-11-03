@@ -88,6 +88,10 @@ VARIANTS = {
     "v5": dict(model="v5", d_model=16, kernel_size=25),
     "long_context": dict(seq_len=64, prompt_len=L),
     "fewshot": dict(train_percent=25),
+    "pdpl_kv": dict(pdpl_mode="kv"),
+    "bdca_xvar": dict(bdca_xvar=1),
+    "trend_linear": dict(trend_head="linear"),
+    "all_fixes": dict(pdpl_mode="kv", bdca_xvar=1, trend_head="linear", bdca_ffn=0),
     "rlinear": dict(model="rlinear"),
     "patchtst": dict(model="patchtst", label_len=8),
     "itransformer": dict(model="itransformer", label_len=8),
@@ -100,6 +104,8 @@ VARIANTS = {
 def test_variant_trains(data_root, tmp_path, name):
     res = train.main(base_args(data_root, tmp_path, tag=name, **VARIANTS[name]))
     assert np.isfinite(res["test"]["mse"]) and res["test"]["n_windows"] > 0
+    if VARIANTS[name].get("model", "pact") == "pact" and VARIANTS[name].get("pdpl", 1):
+        assert 0 <= res["diag"]["pdpl_attn_entropy"] <= 1
     seq_len = VARIANTS[name].get("seq_len", L)
     assert os.path.exists(os.path.join(tmp_path, "Toy", name, f"L{seq_len}_H8_s2024", "results.json"))
 
