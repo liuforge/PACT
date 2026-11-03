@@ -147,7 +147,7 @@ def cmd(ds, H, seed, tag, flags, extra):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main1", "main2", "long", "long2", "fewshot", "screen", "screen2", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
+    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main1", "main2", "long", "long2", "fewshot", "screen", "screen2", "viz", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
     p.add_argument("--datasets", default=None, help="comma list (default depends on the group)")
     p.add_argument("--seeds", default="2024")
     p.add_argument("--full", default="", help="flags of the chosen full configuration (after the pilot)")
@@ -227,6 +227,10 @@ def main():
         for ds, (tag, fl) in itertools.product(pick(list(DATASETS)), (SCREEN if a.group == "screen" else SCREEN2).items()):
             for H in (DATASETS[ds]["H"][0], DATASETS[ds]["H"][2]):
                 jobs.append(cmd(ds, H, 2024, f"scr_{tag}", f"{full(ds, H)} {fl}".strip(), a.extra))
+    elif a.group == "viz":  # checkpoints for prototype projection (extract_prototypes.py)
+        for ds in pick(list(DATASETS)):
+            H = DATASETS[ds]["H"][0]
+            jobs.append(cmd(ds, H, 2024, "viz", f"{full(ds, H)} --save_ckpt 1", a.extra))
     elif a.group == "fewshot":  # does the LLM prior matter more when training data are scarce?
         for ds, s, pct, (tag, fl) in itertools.product(pick(["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather"]), seeds,
                                                         [5, 10, 25, 50],
