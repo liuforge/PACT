@@ -87,6 +87,7 @@ VARIANTS = {
     "timecma": dict(model="timecma", d_model=8),
     "v5": dict(model="v5", d_model=16, kernel_size=25),
     "long_context": dict(seq_len=64, prompt_len=L),
+    "fewshot": dict(train_percent=25),
     "rlinear": dict(model="rlinear"),
     "patchtst": dict(model="patchtst", label_len=8),
     "itransformer": dict(model="itransformer", label_len=8),
@@ -147,3 +148,10 @@ def test_prompt_offset(data_root):
     tr, _, te = build_datasets(s, 64, 8, store, prompt_len=L)
     _, _, start, emb, _ = te[3]
     np.testing.assert_allclose(emb.numpy(), store[start + 64 - L])
+
+
+def test_train_percent(data_root):
+    s = load_series("Toy", str(data_root), L, "toy.csv")
+    full, va, te = build_datasets(s, L, 8)
+    few, va2, te2 = build_datasets(s, L, 8, train_percent=25)
+    assert len(few) == (len(full) + 8 - 1) * 25 // 100 - 8 + 1 and len(va2) == len(va) and len(te2) == len(te)

@@ -157,8 +157,12 @@ class WindowDataset(Dataset):
         return torch.from_numpy(x.copy()), torch.from_numpy(y.copy()), s, torch.from_numpy(emb), torch.from_numpy(xm.copy())
 
 
-def build_datasets(series, seq_len, pred_len, emb_store=None, prompt_len=None):
-    b1, b2 = series["border1s"], series["border2s"]
+def build_datasets(series, seq_len, pred_len, emb_store=None, prompt_len=None, train_percent=100):
+    """train_percent < 100 keeps the first p% of the training windows (few-shot protocol of Time-LLM/GPT4TS);
+    validation and test splits are unchanged."""
+    b1, b2 = list(series["border1s"]), list(series["border2s"])
+    if train_percent < 100:
+        b2[0] = b1[0] + (b2[0] - b1[0] - seq_len) * train_percent // 100 + seq_len
     off = seq_len - (prompt_len or seq_len)
     return [WindowDataset(series["scaled"], b1[k], b2[k], seq_len, pred_len, emb_store, series.get("marks"), off)
             for k in range(3)]

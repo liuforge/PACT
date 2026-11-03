@@ -65,7 +65,8 @@ class TimeMoE:
         steps = []
         done = 0
         while done < H:
-            logits = self.model(input_ids=seq, max_horizon_length=H - done, use_cache=False).logits[:, -1, :]
+            # the remote code reshapes input_ids in place, so pass a copy
+            logits = self.model(input_ids=seq.clone(), max_horizon_length=H - done, use_cache=False).logits[:, -1, :]
             step = logits[:, :H - done].to(seq.dtype)
             steps.append(step)
             seq = torch.cat([seq, step], dim=1)

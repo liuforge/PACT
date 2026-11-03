@@ -36,6 +36,7 @@ def get_args(argv=None):
     a("--data_file", default=None, help="csv path relative to root_path (overrides the registry)")
     a("--seq_len", type=int, default=96)
     a("--pred_len", type=int, default=96)
+    a("--train_percent", type=int, default=100, help="few-shot: use the first p%% of the training windows")
     a("--emb_root", default="./embeddings")
     a("--emb_tag", default="gpt2", help="embedding store name: {emb_root}/{dataset}/{emb_tag}_L{prompt_len}.npy")
     a("--prompt_len", type=int, default=None, help="steps described by the LLM prompt (default seq_len); the "
@@ -204,7 +205,8 @@ def main(argv=None):
     else:
         args.d_llm = getattr(args, "d_llm", None) or 768
 
-    train_set, val_set, test_set = build_datasets(series, args.seq_len, args.pred_len, store, args.prompt_len)
+    train_set, val_set, test_set = build_datasets(series, args.seq_len, args.pred_len, store, args.prompt_len,
+                                                  args.train_percent)
     if args.num_workers > 0 and os.path.isdir("/dev/shm"):
         st = os.statvfs("/dev/shm")
         if st.f_frsize * st.f_blocks < 512 * 2 ** 20:  # containers with a 64 MB /dev/shm cannot pass large batches
