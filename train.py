@@ -89,6 +89,8 @@ def get_args(argv=None):
     a("--clip", type=float, default=5.0)
     a("--seed", type=int, default=2024)
     a("--num_workers", type=int, default=4)
+    a("--threads", type=int, default=4, help="torch intra-op threads per process (avoid CPU oversubscription)")
+    a("--emb_in_memory", type=int, default=1, help="load the embedding store into RAM instead of memmap")
     a("--device", default="cuda")
     a("--amp", type=int, default=0, help="bf16 autocast")
     # bookkeeping
@@ -178,6 +180,7 @@ def main(argv=None):
         if args.model not in NEEDS_EMB:
             args.llm = "none"
     seed_all(args.seed)
+    torch.set_num_threads(args.threads)
     device = torch.device(args.device if (args.device != "cuda" or torch.cuda.is_available()) else "cpu")
 
     series = load_series(args.dataset, args.root_path, args.seq_len, args.data_file)
@@ -191,7 +194,7 @@ def main(argv=None):
         path = os.path.join(args.emb_root, args.dataset, f"{args.emb_tag}_L{args.prompt_len}.npy")
         if os.path.exists(path + ".progress") and not json.load(open(path + ".progress"))["finished"]:
             raise RuntimeError(f"embedding store {path} is still being built")
-        store = EmbeddingStore(path)
+        store = EmbeddingStore(path, in_memory=bool(args.emb_in_memory))
         n_expected = series["raw"].shape[0] - args.prompt_len + 1
         if len(store) != n_expected or store.arr.shape[1] != args.num_vars:
             raise ValueError(f"embedding store {path} has shape {store.arr.shape}, expected [{n_expected}, {args.num_vars}, d]")

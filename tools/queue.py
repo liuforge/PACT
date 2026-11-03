@@ -37,7 +37,7 @@ def main():
             if s not in running and todo:
                 n, c = todo.pop(0)
                 f = open(os.path.join(a.log_dir, f"{stem}_{n:04d}.log"), "w")
-                env = dict(os.environ, CUDA_VISIBLE_DEVICES=slots[s])
+                env = dict(os.environ, CUDA_VISIBLE_DEVICES=slots[s], OMP_NUM_THREADS="4", MKL_NUM_THREADS="4")
                 running[s] = (subprocess.Popen(c, shell=True, stdout=f, stderr=subprocess.STDOUT, env=env), n, f)
         for s, (proc, n, f) in list(running.items()):
             if proc.poll() is not None:

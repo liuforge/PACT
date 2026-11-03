@@ -99,8 +99,9 @@ class EmbeddingStore:
     Opened lazily so that DataLoader workers each get their own memmap instead of a pickled copy.
     """
 
-    def __init__(self, path, index_map=None):
+    def __init__(self, path, index_map=None, in_memory=False):
         self.path = path
+        self.in_memory = in_memory
         meta_path = os.path.splitext(path)[0] + ".json"
         self.meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {}
         self.index_map = index_map
@@ -109,7 +110,7 @@ class EmbeddingStore:
     @property
     def arr(self):
         if self._arr is None:
-            self._arr = np.load(self.path, mmap_mode="r")
+            self._arr = np.load(self.path, mmap_mode=None if self.in_memory else "r")
         return self._arr
 
     @property
@@ -126,7 +127,8 @@ class EmbeddingStore:
 
     def __getstate__(self):
         state = self.__dict__.copy()
-        state["_arr"] = None
+        if not self.in_memory:
+            state["_arr"] = None
         return state
 
 
