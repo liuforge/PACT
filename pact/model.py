@@ -142,6 +142,7 @@ class PDPL(nn.Module):
     """Prototype-based Dynamic Prompt Learning: soft retrieval over a learnable codebook + knowledge gate.
 
     mode="dot": keys = values = P, scaled dot product (first version; E_dyn is a smooth projection of H)
+    mode="cos": same single prototype matrix, cosine similarity scaled by a learnable temperature
     mode="kv":  separate key and value prototypes (a key-value memory over the training set), cosine
                 retrieval with a learnable temperature, so the prompt can carry information H does not contain
     """
@@ -152,6 +153,7 @@ class PDPL(nn.Module):
         self.prototypes = nn.Parameter(torch.randn(n_prototypes, d_model))  # keys (and values for "dot")
         if mode == "kv":
             self.values = nn.Parameter(torch.randn(n_prototypes, d_model))
+        if mode in ("kv", "cos"):
             self.log_scale = nn.Parameter(torch.tensor(math.log(temp_init)))
         elif mode != "dot":
             raise ValueError(mode)
@@ -159,10 +161,10 @@ class PDPL(nn.Module):
         self.last = {}
 
     def forward(self, h, anchor=None):  # h, anchor [S, T, D]
-        if self.mode == "kv":
+        if self.mode in ("kv", "cos"):  # cosine retrieval with a learnable temperature (sharper assignments)
             sim = F.normalize(h, dim=-1) @ F.normalize(self.prototypes, dim=-1).t()
             attn = torch.softmax(sim * self.log_scale.exp(), dim=-1)  # [S, T, K]
-            e_dyn = attn @ self.values
+            e_dyn = attn @ (self.values if self.mode == "kv" else self.prototypes)
         else:
             attn = torch.softmax(h @ self.prototypes.t() / math.sqrt(h.shape[-1]), dim=-1)
             e_dyn = attn @ self.prototypes

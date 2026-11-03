@@ -93,12 +93,13 @@ def load_chosen(path):
 # structural fixes screened on validation (seed 2024) before re-running the downstream experiments
 SCREEN = {
     "base": "",
+    "cos": "--pdpl_mode cos",
+    "cos_xvar": "--pdpl_mode cos --bdca_xvar 1",
+    "cos30_xvar": "--pdpl_mode cos --pdpl_temp 30 --bdca_xvar 1",
     "kv": "--pdpl_mode kv",
     "xvar": "--bdca_xvar 1",
-    "tlin": "--trend_head linear",
     "kv_xvar": "--pdpl_mode kv --bdca_xvar 1",
-    "kv_xvar_tlin": "--pdpl_mode kv --bdca_xvar 1 --trend_head linear",
-    "kv_xvar_tlin_noalign": "--pdpl_mode kv --bdca_xvar 1 --trend_head linear --lambda_align 0",
+    "plain": "--decomp none --pdpl 0 --llm none",
 }
 SCREEN2 = {  # second batch (run in parallel on another machine); "plain" is the reference without PACT components
     "plain": "--decomp none --pdpl 0 --llm none",

@@ -89,6 +89,7 @@ VARIANTS = {
     "long_context": dict(seq_len=64, prompt_len=L),
     "fewshot": dict(train_percent=25),
     "pdpl_kv": dict(pdpl_mode="kv"),
+    "pdpl_cos": dict(pdpl_mode="cos", bdca_xvar=1),
     "bdca_xvar": dict(bdca_xvar=1),
     "trend_linear": dict(trend_head="linear"),
     "all_fixes": dict(pdpl_mode="kv", bdca_xvar=1, trend_head="linear", bdca_ffn=0),

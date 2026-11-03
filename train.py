@@ -74,7 +74,8 @@ def get_args(argv=None):
     a("--bdca_iters", type=int, default=1, help="-1: no BDCA, 0: single cross-attention, I>=1: I bi-directional rounds")
     a("--bdca_ffn", type=int, default=1)
     a("--bdca_xvar", type=int, default=0, help="BDCA backward step also calibrates prompts across variates")
-    a("--pdpl_mode", default="dot", choices=["dot", "kv"], help="kv: key-value prototype memory, cosine retrieval")
+    a("--pdpl_mode", default="dot", choices=["dot", "cos", "kv"],
+      help="cos: cosine retrieval with learnable temperature; kv: separate key/value prototypes")
     a("--pdpl_temp", type=float, default=10.0, help="initial retrieval temperature for pdpl_mode=kv")
     a("--trend_head", default="full", choices=["full", "linear"], help="linear: trend branch is a linear map")
     a("--fusion", default="scalar", choices=["scalar", "variate", "sum"])
