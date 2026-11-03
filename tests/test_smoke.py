@@ -86,6 +86,7 @@ VARIANTS = {
     "fusion_sum": dict(fusion="sum"),
     "timecma": dict(model="timecma", d_model=8),
     "v5": dict(model="v5", d_model=16, kernel_size=25),
+    "long_context": dict(seq_len=64, prompt_len=L),
     "rlinear": dict(model="rlinear"),
     "patchtst": dict(model="patchtst", label_len=8),
     "itransformer": dict(model="itransformer", label_len=8),
@@ -98,7 +99,8 @@ VARIANTS = {
 def test_variant_trains(data_root, tmp_path, name):
     res = train.main(base_args(data_root, tmp_path, tag=name, **VARIANTS[name]))
     assert np.isfinite(res["test"]["mse"]) and res["test"]["n_windows"] > 0
-    assert os.path.exists(os.path.join(tmp_path, "Toy", name, f"L{L}_H8_s2024", "results.json"))
+    seq_len = VARIANTS[name].get("seq_len", L)
+    assert os.path.exists(os.path.join(tmp_path, "Toy", name, f"L{seq_len}_H8_s2024", "results.json"))
 
 
 def test_seed_reproducible(data_root, tmp_path):
@@ -132,3 +134,13 @@ def test_build_embeddings_tiny(data_root, tmp_path):
     assert arr.shape == (N_ROWS - L + 1, N_VARS, 768) and np.isfinite(arr).all() and np.abs(arr).sum(-1).min() > 0
     meta = json.load(open(tmp_path / "Toy" / f"gpt2-randinit_L{L}.json"))
     assert meta["n_windows"] == N_ROWS - L + 1
+
+
+def test_prompt_offset(data_root):
+    """With prompt_len < seq_len the embedding row is the window of the last prompt_len steps."""
+    from pact.data import EmbeddingStore
+    s = load_series("Toy", str(data_root), 64, "toy.csv")
+    store = EmbeddingStore(str(data_root / "emb" / "Toy" / f"fake_L{L}.npy"))
+    tr, _, te = build_datasets(s, 64, 8, store, prompt_len=L)
+    _, _, start, emb, _ = te[3]
+    np.testing.assert_allclose(emb.numpy(), store[start + 64 - L])

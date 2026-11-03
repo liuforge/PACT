@@ -37,7 +37,9 @@ def get_args(argv=None):
     a("--seq_len", type=int, default=96)
     a("--pred_len", type=int, default=96)
     a("--emb_root", default="./embeddings")
-    a("--emb_tag", default="gpt2", help="embedding store name: {emb_root}/{dataset}/{emb_tag}_L{seq_len}.npy")
+    a("--emb_tag", default="gpt2", help="embedding store name: {emb_root}/{dataset}/{emb_tag}_L{prompt_len}.npy")
+    a("--prompt_len", type=int, default=None, help="steps described by the LLM prompt (default seq_len); the "
+      "prompt covers the last prompt_len steps of the window, e.g. L=512 with the L=96 store")
     # model
     a("--model", default="pact", choices=list(MODELS))
     a("--d_layers", type=int, default=1, help="TimeCMA decoder layers")
@@ -183,11 +185,14 @@ def main(argv=None):
 
     store = None
     if args.llm in ("stored", "shuffled"):
-        path = os.path.join(args.emb_root, args.dataset, f"{args.emb_tag}_L{args.seq_len}.npy")
+        args.prompt_len = args.prompt_len or args.seq_len
+        if args.prompt_len > args.seq_len:
+            raise ValueError("prompt_len cannot exceed seq_len")
+        path = os.path.join(args.emb_root, args.dataset, f"{args.emb_tag}_L{args.prompt_len}.npy")
         if os.path.exists(path + ".progress") and not json.load(open(path + ".progress"))["finished"]:
             raise RuntimeError(f"embedding store {path} is still being built")
         store = EmbeddingStore(path)
-        n_expected = series["raw"].shape[0] - args.seq_len + 1
+        n_expected = series["raw"].shape[0] - args.prompt_len + 1
         if len(store) != n_expected or store.arr.shape[1] != args.num_vars:
             raise ValueError(f"embedding store {path} has shape {store.arr.shape}, expected [{n_expected}, {args.num_vars}, d]")
         if args.llm == "shuffled":  # pre-trained embeddings of a *different* window: breaks sample alignment
@@ -196,7 +201,7 @@ def main(argv=None):
     else:
         args.d_llm = getattr(args, "d_llm", None) or 768
 
-    train_set, val_set, test_set = build_datasets(series, args.seq_len, args.pred_len, store)
+    train_set, val_set, test_set = build_datasets(series, args.seq_len, args.pred_len, store, args.prompt_len)
     if store is not None and args.num_workers > 0 and os.path.isdir("/dev/shm"):
         st = os.statvfs("/dev/shm")
         if st.f_frsize * st.f_blocks < 512 * 2 ** 20:  # containers with a 64 MB /dev/shm cannot pass embedding batches

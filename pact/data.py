@@ -131,8 +131,9 @@ class EmbeddingStore:
 
 
 class WindowDataset(Dataset):
-    def __init__(self, scaled, border1, border2, seq_len, pred_len, emb_store=None, marks=None):
+    def __init__(self, scaled, border1, border2, seq_len, pred_len, emb_store=None, marks=None, emb_offset=0):
         self.data = scaled
+        self.emb_offset = emb_offset  # prompt describes the last prompt_len steps: store row = s + seq_len - prompt_len
         self.marks = marks
         self.start = border1
         self.seq_len = seq_len
@@ -149,12 +150,13 @@ class WindowDataset(Dataset):
         s = self.start + i
         x = self.data[s:s + self.seq_len]
         y = self.data[s + self.seq_len:s + self.seq_len + self.pred_len]
-        emb = self.emb[s] if self.emb is not None else np.zeros(0, dtype=np.float32)
+        emb = self.emb[s + self.emb_offset] if self.emb is not None else np.zeros(0, dtype=np.float32)
         xm = self.marks[s:s + self.seq_len] if self.marks is not None else np.zeros((self.seq_len, 4), np.float32)
         return torch.from_numpy(x.copy()), torch.from_numpy(y.copy()), s, torch.from_numpy(emb), torch.from_numpy(xm.copy())
 
 
-def build_datasets(series, seq_len, pred_len, emb_store=None):
+def build_datasets(series, seq_len, pred_len, emb_store=None, prompt_len=None):
     b1, b2 = series["border1s"], series["border2s"]
-    return [WindowDataset(series["scaled"], b1[k], b2[k], seq_len, pred_len, emb_store, series.get("marks"))
+    off = seq_len - (prompt_len or seq_len)
+    return [WindowDataset(series["scaled"], b1[k], b2[k], seq_len, pred_len, emb_store, series.get("marks"), off)
             for k in range(3)]
