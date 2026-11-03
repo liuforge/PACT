@@ -163,7 +163,7 @@ def main():
             for H in DATASETS[ds]["H"]:
                 jobs.append(cmd(ds, H, s, f"abl_{tag}", f"{a.full} {fl}".strip(), a.extra))
     elif a.group == "llm":
-        for ds, s, (tag, fl) in itertools.product(pick(["ETTh1", "ETTm2", "Weather", "ECL", "ILI"]), seeds, LLM_CONTROLS.items()):
+        for ds, s, (tag, fl) in itertools.product(pick(["ETTh1", "ETTh2", "ETTm2", "Weather", "ILI"]), seeds, LLM_CONTROLS.items()):
             for H in DATASETS[ds]["H"]:
                 jobs.append(cmd(ds, H, s, tag, f"{a.full} {fl}".strip(), a.extra))
     elif a.group == "kproto":
