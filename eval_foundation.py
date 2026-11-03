@@ -77,6 +77,12 @@ class TimeMoE:
         from transformers import AutoModelForCausalLM
         self.model = AutoModelForCausalLM.from_pretrained(ckpt, trust_remote_code=True).float().to(device).eval()
         self.device = device
+        # transformers>=5 materialises non-persistent buffers from the meta device without re-running __init__,
+        # leaving the rotary tables uninitialised (NaN outputs); rebuild them as the remote code does.
+        for mod in self.model.modules():
+            if hasattr(mod, "inv_freq") and hasattr(mod, "_set_cos_sin_cache"):
+                mod.inv_freq = 1.0 / (mod.base ** (torch.arange(0, mod.dim, 2, device=device).float() / mod.dim))
+                mod._set_cos_sin_cache(seq_len=mod.max_position_embeddings, device=device, dtype=torch.float32)
 
     @torch.no_grad()
     def __call__(self, ctx, H):
