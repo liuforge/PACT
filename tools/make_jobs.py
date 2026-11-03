@@ -71,22 +71,23 @@ def tslib_flags(model, ds, H):
 
 
 # final PACT configuration (pilot 1: patch layout; pilot 2: no BDCA FFN, dropout 0.1; diagnosis: normalised prompts)
-FULL = "--token_mode patch --dropout 0.1 --bdca_ffn 0 --llm stored --emb_tag gpt2-norm"
-GRID = [(lr, d) for lr in ("1e-4", "5e-4") for d in (64, 128)]  # stage 1, selected on seed-2024 validation MSE
+FULL = "--token_mode patch --dropout 0.1 --llm stored --emb_tag gpt2-norm"
+# stage 1 grid, selected on seed-2024 validation MSE: lr x d_model x BDCA position-wise FFN
+GRID = [(lr, d, f) for f in (0, 1) for lr in ("1e-4", "5e-4") for d in (64, 128)]
 
 
-def hp_flags(lr, d):
-    return f"--lr {lr} --d_model {d} --d_ff {2 * d}"
+def hp_flags(lr, d, ffn=0):
+    return f"--lr {lr} --d_model {d} --d_ff {2 * d} --bdca_ffn {ffn}"
 
 
-def hp_tag(lr, d):
-    return f"lr{lr}_d{d}"
+def hp_tag(lr, d, ffn=0):
+    return f"lr{lr}_d{d}" + ("_f1" if ffn else "")  # ffn=0 tags kept as in the first runs
 
 
 def load_chosen(path):
-    """chosen.json: {dataset: {H: [lr, d]}} written by tools/choose.py"""
+    """chosen.json: {dataset: {H: [lr, d, ffn]}} written by tools/choose.py"""
     c = json.load(open(path)) if path and os.path.exists(path) else {}
-    return {ds: {int(h): tuple(v) for h, v in hs.items()} for ds, hs in c.items()}
+    return {ds: {int(h): (tuple(v) + (0,))[:3] for h, v in hs.items()} for ds, hs in c.items()}
 
 
 # ablation variants (relative to the chosen full configuration)
@@ -159,13 +160,13 @@ def main():
     elif a.group == "main1":
         for ds in pick(list(DATASETS)):
             for H in DATASETS[ds]["H"]:
-                for lr, d in GRID:
-                    jobs.append(cmd(ds, H, 2024, f"pact__{hp_tag(lr, d)}", f"{FULL} {hp_flags(lr, d)}", a.extra))
+                for lr, d, f in GRID:
+                    jobs.append(cmd(ds, H, 2024, f"pact__{hp_tag(lr, d, f)}", f"{FULL} {hp_flags(lr, d, f)}", a.extra))
     elif a.group == "main2":
         for ds, s in itertools.product(pick(list(DATASETS)), [x for x in seeds if x != 2024]):
             for H in DATASETS[ds]["H"]:
-                lr, d = chosen[ds][H]
-                jobs.append(cmd(ds, H, s, f"pact__{hp_tag(lr, d)}", f"{FULL} {hp_flags(lr, d)}", a.extra))
+                hp = chosen[ds][H]
+                jobs.append(cmd(ds, H, s, f"pact__{hp_tag(*hp)}", f"{FULL} {hp_flags(*hp)}", a.extra))
     elif a.group == "timecma":  # official TimeCMA hyper-parameters, re-run under our protocol
         for ds, s in itertools.product(pick(list(DATASETS)), seeds):
             for H in DATASETS[ds]["H"]:
@@ -190,16 +191,16 @@ def main():
         for ds, s in itertools.product(pick(["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL"]), [2024]):
             for H in DATASETS[ds]["H"]:
                 c = lambda tag, fl: cmd(ds, H, s, tag, fl, a.extra).replace(f"--seq_len {DATASETS[ds]['L']}", "--seq_len 512")  # noqa: E731
-                for lr, d in GRID:  # L=512 changes the input, so its hyper-parameters are selected separately
-                    jobs.append(c(f"L512_pact__{hp_tag(lr, d)}", f"{FULL} {hp_flags(lr, d)} --prompt_len 96"))
+                for lr, d, f in GRID:  # L=512 changes the input, so its hyper-parameters are selected separately
+                    jobs.append(c(f"L512_pact__{hp_tag(lr, d, f)}", f"{FULL} {hp_flags(lr, d, f)} --prompt_len 96"))
                 jobs.append(c("L512_patchtst", tslib_flags("patchtst", ds, H)))
                 for lr in ("1e-4", "1e-3", "5e-3"):
                     jobs.append(c(f"L512_rlinear__lr{lr}", tslib_flags("rlinear", ds, H).replace("--lr 1e-4", f"--lr {lr}")))
     elif a.group == "long2":  # extra seeds for the L=512 configuration chosen on seed 2024 (--chosen from choose.py --prefix L512_pact__)
         for ds, s in itertools.product(pick(["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL"]), [x for x in seeds if x != 2024]):
             for H in DATASETS[ds]["H"]:
-                lr, d = chosen[ds][H]
-                jobs.append(cmd(ds, H, s, f"L512_pact__{hp_tag(lr, d)}", f"{FULL} {hp_flags(lr, d)} --prompt_len 96",
+                hp = chosen[ds][H]
+                jobs.append(cmd(ds, H, s, f"L512_pact__{hp_tag(*hp)}", f"{FULL} {hp_flags(*hp)} --prompt_len 96",
                                 a.extra).replace(f"--seq_len {DATASETS[ds]['L']}", "--seq_len 512"))
     elif a.group == "fewshot":  # does the LLM prior matter more when training data are scarce?
         for ds, s, pct, (tag, fl) in itertools.product(pick(["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather"]), seeds,
