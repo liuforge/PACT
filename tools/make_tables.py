@@ -189,6 +189,52 @@ def efficiency_table(R, models, ds, H, caption, label):
     return "\n".join(lines)
 
 
+def fewshot_table(R, caption, label):
+    """Test MSE averaged over datasets, horizons and seeds for each training fraction and anchor condition."""
+    conds = [("gpt2", "GPT-2 anchor"), ("learned", "learned vectors"), ("none", "no anchor")]
+    pcts = sorted({int(t[2:].split("_")[0]) for (_, t, _) in R if t.startswith("fs") and t[2:].split("_")[0].isdigit()})
+    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+             r"\begin{tabular}{l " + "c " * len(pcts) + "}", r"\toprule",
+             "Anchor & " + " & ".join(f"{q}\\%" for q in pcts) + r" \\", r"\midrule"]
+    for c, name in conds:
+        row = []
+        for q in pcts:
+            v = [r["mse"] for (ds, t, H), runs in R.items() if t == f"fs{q}_{c}" for r in runs]
+            row.append(f"{np.mean(v):.4f}" if v else "--")
+        lines.append(f"{name} & " + " & ".join(row) + r" \\")
+    pv = []
+    for q in pcts:
+        cells = collections.defaultdict(dict)
+        for (ds, t, H), runs in R.items():
+            for c, _ in conds:
+                if t == f"fs{q}_{c}":
+                    for r in runs:
+                        cells[(ds, H, r["seed"])][c] = r["mse"]
+        ks = [k for k in cells if "gpt2" in cells[k] and "none" in cells[k]]
+        x = np.array([cells[k]["gpt2"] for k in ks]); y = np.array([cells[k]["none"] for k in ks])
+        pv.append(f"{wilcoxon(x, y).pvalue:.2f}" if len(ks) >= 6 else "--")
+    lines += [r"\midrule", r"$p$ (GPT-2 vs.\ none) & " + " & ".join(pv) + r" \\", r"\bottomrule", r"\end{tabular}", r"\end{table}"]
+    return "\n".join(lines)
+
+
+def transfer_table(R, caption, label):
+    """Cross-domain zero-shot: model trained on the source, evaluated on the target test split."""
+    conds = [("tr_gpt2", "GPT-2"), ("tr_learned", "learned"), ("tr_none", "none")]
+    pairs = collections.defaultdict(lambda: collections.defaultdict(list))
+    for (ds, t, H), runs in R.items():
+        if t in dict(conds):
+            for r in runs:
+                for tgt, m in (r.get("transfer") or {}).items():
+                    pairs[(ds, tgt)][t].append(m["mse"])
+    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+             r"\begin{tabular}{l ccc}", r"\toprule", r"Source $\rightarrow$ target & " + " & ".join(n for _, n in conds) + r" \\", r"\midrule"]
+    for (src, tgt), d in sorted(pairs.items()):
+        vals = [np.mean(d[t]) if d[t] else None for t, _ in conds]
+        lines.append(f"{src} $\\rightarrow$ {tgt} & " + " & ".join(fmt_rank(vals, 3)) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
+    return "\n".join(lines)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--root", required=True, nargs="+", help="one or more results roots (merged)")
@@ -224,6 +270,15 @@ def main():
         ("abl_no_all", "w/o decomposition, PDPL and anchor")],
         "Component ablation: relative change of test MSE with respect to the full model (positive = the component "
         "helps); $p$: Wilcoxon signed-rank test over all (dataset, horizon, seed) cells.", "tab:ablation"))
+    w("fewshot.tex", fewshot_table(R, "Few-shot forecasting: test MSE averaged over datasets, horizons and seeds when only "
+      "the first $p\\%$ of the training windows are used.", "tab:fewshot"))
+    w("transfer.tex", transfer_table(R, "Cross-domain zero-shot forecasting (test MSE on the target, averaged over horizons "
+      "and seeds): the model is trained on the source dataset only.", "tab:transfer"))
+    long_models = [("L512_pact", "PACT"), ("L512_patchtst", "PatchTST"), ("L512_rlinear", "RLinear"),
+                   ("zs_timesfm-3.0-pytorch_ctx512", "TimesFM-3"), ("zs_Toto-2.0-313m_ctx512", "Toto-2"),
+                   ("zs_TimeMoE-200M_ctx512", "Time-MoE")]
+    w("long.tex", main_table(R, long_models, "Long look-back: trained models with $L=512$ and foundation models with a "
+      "512-step context, on the same test targets as Table~\\ref{tab:main_results}.", "tab:long"))
     w("efficiency.tex", efficiency_table(R, MAIN_MODELS, "ETTm1", 96,
       "Efficiency on ETTm1 ($H=96$, measured in the same environment). PACT additionally needs a one-off offline "
       "pass of GPT-2 over the prompts (reported in the text).", "tab:efficiency"))
