@@ -31,14 +31,16 @@ def collect(root, tags=None, metric_scale="norm"):
     return rows
 
 
-def select_by_val(rows):
-    """Collapse tags '<name>__<hp>' to '<name>': per (dataset, L, H) keep the hp with the lowest mean val MSE."""
+def select_by_val(rows, seed=2024):
+    """Collapse tags '<name>__<hp>' to '<name>': per (dataset, L, H) keep the hp with the lowest validation MSE
+    of the selection seed (all seeds of the chosen hp are then reported)."""
     best = {}
     for (ds, tag, L, H), runs in rows.items():
         if "__" not in tag:
             continue
         base = tag.split("__")[0]
-        v = float(np.mean([r["val_mse"] for r in runs]))
+        sel = [r["val_mse"] for r in runs if r["seed"] == seed] or [r["val_mse"] for r in runs]
+        v = float(np.mean(sel))
         k = (ds, base, L, H)
         if k not in best or v < best[k][0]:
             best[k] = (v, tag)

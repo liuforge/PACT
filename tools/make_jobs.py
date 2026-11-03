@@ -7,6 +7,8 @@ Common flags (--root_path, --emb_root, --out_root, ...) are appended via --extra
 """
 import argparse
 import itertools
+import json
+import os
 
 # look-back, horizons and per-dataset settings shared by all groups
 DATASETS = {
@@ -68,6 +70,25 @@ def tslib_flags(model, ds, H):
     return f"--model {model} {arch} {label} --lr {lr} {TSLIB_TRAIN} {extra}".replace("  ", " ").strip()
 
 
+# final PACT configuration (pilot 1: patch layout; pilot 2: no BDCA FFN, dropout 0.1; diagnosis: normalised prompts)
+FULL = "--token_mode patch --dropout 0.1 --bdca_ffn 0 --llm stored --emb_tag gpt2-norm"
+GRID = [(lr, d) for lr in ("1e-4", "5e-4") for d in (64, 128)]  # stage 1, selected on seed-2024 validation MSE
+
+
+def hp_flags(lr, d):
+    return f"--lr {lr} --d_model {d} --d_ff {2 * d}"
+
+
+def hp_tag(lr, d):
+    return f"lr{lr}_d{d}"
+
+
+def load_chosen(path):
+    """chosen.json: {dataset: {H: [lr, d]}} written by tools/choose.py"""
+    c = json.load(open(path)) if path and os.path.exists(path) else {}
+    return {ds: {int(h): tuple(v) for h, v in hs.items()} for ds, hs in c.items()}
+
+
 # ablation variants (relative to the chosen full configuration)
 ABLATIONS = {
     "full": "",
@@ -85,9 +106,10 @@ ABLATIONS = {
 }
 # controls for "does the gain come from the pre-trained LLM?" (R1-6, R3, AE)
 LLM_CONTROLS = {
-    "llm_gpt2": "--llm stored --emb_tag gpt2",
-    "llm_randinit": "--llm stored --emb_tag gpt2-randinit",
-    "llm_shuffled": "--llm shuffled --emb_tag gpt2",
+    "llm_gpt2": "--llm stored --emb_tag gpt2-norm",
+    "llm_gpt2raw": "--llm stored --emb_tag gpt2",           # TimeCMA-style prompt with raw values
+    "llm_randinit": "--llm stored --emb_tag gpt2-randinit-norm",
+    "llm_shuffled": "--llm shuffled --emb_tag gpt2-norm",
     "llm_learned": "--llm learned",
     "llm_random": "--llm random",
     "llm_none": "--llm none",
@@ -103,15 +125,25 @@ def cmd(ds, H, seed, tag, flags, extra):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "long", "main", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
+    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main1", "main2", "long", "long2", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
     p.add_argument("--datasets", default=None, help="comma list (default depends on the group)")
     p.add_argument("--seeds", default="2024")
     p.add_argument("--full", default="", help="flags of the chosen full configuration (after the pilot)")
     p.add_argument("--extra", default="")
+    p.add_argument("--chosen", default=None, help="chosen.json from tools/choose.py (main2/llm/ablation/long/...)")
     a = p.parse_args()
     seeds = [int(s) for s in a.seeds.split(",")]
     pick = lambda default: a.datasets.split(",") if a.datasets else default  # noqa: E731
     jobs = []
+    chosen = load_chosen(a.chosen)
+
+    def full(ds, H):
+        """FULL + the stage-1 hyper-parameters chosen for (ds, H); falls back to --full when given."""
+        if a.full:
+            return a.full
+        if ds not in chosen or H not in chosen[ds]:
+            raise SystemExit(f"no chosen hyper-parameters for {ds}-{H}; run tools/choose.py after main1")
+        return f"{FULL} {hp_flags(*chosen[ds][H])}"
 
     if a.group == "pilot":  # choose token layout and learning rate on a subset, one seed
         for ds, mode, lr in itertools.product(pick(["ETTh1", "ETTm2", "Weather", "ILI"]), ["patch", "variate"], ["1e-4", "5e-4"]):
@@ -124,11 +156,16 @@ def main():
                 for H in (DATASETS[ds]["H"][0], DATASETS[ds]["H"][2]):
                     fl = f"--token_mode patch --lr {lr} --d_model {dm} --d_ff {2 * dm} --dropout {do} --bdca_ffn {ffn}"
                     jobs.append(cmd(ds, H, seeds[0], f"pilot2_d{dm}_do{do}_ffn{ffn}", fl, a.extra))
-    elif a.group == "main":
-        for ds, s in itertools.product(pick(list(DATASETS)), seeds):
+    elif a.group == "main1":
+        for ds in pick(list(DATASETS)):
             for H in DATASETS[ds]["H"]:
-                for lr in ("1e-4", "5e-4"):  # chosen on validation per (dataset, H) by tools/aggregate.py
-                    jobs.append(cmd(ds, H, s, f"pact__lr{lr}", f"{a.full} --lr {lr}".strip(), a.extra))
+                for lr, d in GRID:
+                    jobs.append(cmd(ds, H, 2024, f"pact__{hp_tag(lr, d)}", f"{FULL} {hp_flags(lr, d)}", a.extra))
+    elif a.group == "main2":
+        for ds, s in itertools.product(pick(list(DATASETS)), [x for x in seeds if x != 2024]):
+            for H in DATASETS[ds]["H"]:
+                lr, d = chosen[ds][H]
+                jobs.append(cmd(ds, H, s, f"pact__{hp_tag(lr, d)}", f"{FULL} {hp_flags(lr, d)}", a.extra))
     elif a.group == "timecma":  # official TimeCMA hyper-parameters, re-run under our protocol
         for ds, s in itertools.product(pick(list(DATASETS)), seeds):
             for H in DATASETS[ds]["H"]:
@@ -150,30 +187,36 @@ def main():
                     fl = tslib_flags(m, ds, H).replace("--lr 1e-4", f"--lr {lr}")
                     jobs.append(cmd(ds, H, s, f"{m}__lr{lr}", fl, a.extra))
     elif a.group == "long":  # L=512 (vs foundation models with a 512 context); the prompt covers the last 96 steps
-        for ds, s in itertools.product(pick(["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL"]), seeds):
+        for ds, s in itertools.product(pick(["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL"]), [2024]):
             for H in DATASETS[ds]["H"]:
                 c = lambda tag, fl: cmd(ds, H, s, tag, fl, a.extra).replace(f"--seq_len {DATASETS[ds]['L']}", "--seq_len 512")  # noqa: E731
-                for lr in ("1e-4", "5e-4"):
-                    jobs.append(c(f"L512_pact__lr{lr}", f"{a.full} --prompt_len 96 --lr {lr}".strip()))
+                for lr, d in GRID:  # L=512 changes the input, so its hyper-parameters are selected separately
+                    jobs.append(c(f"L512_pact__{hp_tag(lr, d)}", f"{FULL} {hp_flags(lr, d)} --prompt_len 96"))
                 jobs.append(c("L512_patchtst", tslib_flags("patchtst", ds, H)))
                 for lr in ("1e-4", "1e-3", "5e-3"):
                     jobs.append(c(f"L512_rlinear__lr{lr}", tslib_flags("rlinear", ds, H).replace("--lr 1e-4", f"--lr {lr}")))
+    elif a.group == "long2":  # extra seeds for the L=512 configuration chosen on seed 2024 (--chosen from choose.py --prefix L512_pact__)
+        for ds, s in itertools.product(pick(["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL"]), [x for x in seeds if x != 2024]):
+            for H in DATASETS[ds]["H"]:
+                lr, d = chosen[ds][H]
+                jobs.append(cmd(ds, H, s, f"L512_pact__{hp_tag(lr, d)}", f"{FULL} {hp_flags(lr, d)} --prompt_len 96",
+                                a.extra).replace(f"--seq_len {DATASETS[ds]['L']}", "--seq_len 512"))
     elif a.group == "ablation":
         for ds, s, (tag, fl) in itertools.product(pick(["ETTh2", "ETTm2", "Weather", "ECL", "ILI"]), seeds, ABLATIONS.items()):
             for H in DATASETS[ds]["H"]:
-                jobs.append(cmd(ds, H, s, f"abl_{tag}", f"{a.full} {fl}".strip(), a.extra))
+                jobs.append(cmd(ds, H, s, f"abl_{tag}", f"{full(ds, H)} {fl}".strip(), a.extra))
     elif a.group == "llm":
         for ds, s, (tag, fl) in itertools.product(pick(["ETTh1", "ETTh2", "ETTm2", "Weather", "ILI"]), seeds, LLM_CONTROLS.items()):
             for H in DATASETS[ds]["H"]:
-                jobs.append(cmd(ds, H, s, tag, f"{a.full} {fl}".strip(), a.extra))
+                jobs.append(cmd(ds, H, s, tag, f"{full(ds, H)} {fl}".strip(), a.extra))
     elif a.group == "kproto":
         for ds, s, k in itertools.product(pick(["Weather", "ETTh2"]), seeds, [4, 8, 16, 32, 64]):
             for H in (DATASETS[ds]["H"][0], DATASETS[ds]["H"][2]):
-                jobs.append(cmd(ds, H, s, f"K{k}", f"{a.full} --n_prototypes {k}", a.extra))
+                jobs.append(cmd(ds, H, s, f"K{k}", f"{full(ds, H)} --n_prototypes {k}", a.extra))
     elif a.group == "kernel":
         for ds, s, k in itertools.product(pick(["Weather", "ETTh2"]), seeds, [7, 11, 25, 49]):
             for H in (DATASETS[ds]["H"][0], DATASETS[ds]["H"][2]):
-                jobs.append(cmd(ds, H, s, f"ks{k}", f"{a.full} --kernel_size {k}", a.extra))
+                jobs.append(cmd(ds, H, s, f"ks{k}", f"{full(ds, H)} --kernel_size {k}", a.extra))
     print("\n".join(jobs))
 
 
