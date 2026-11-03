@@ -50,6 +50,8 @@ def main():
     best_var = torch.zeros((K, a.top), dtype=torch.long)
     usage = torch.zeros(K)
     ent_sum, n_tok = 0.0, 0
+    gen = torch.Generator().manual_seed(0)
+    rand_p = []  # uniform sample of training patches: baseline for the coherence of retrieved patches
     loader = torch.utils.data.DataLoader(train_set, batch_size=a.batch_size, shuffle=False)
     with torch.no_grad():
         for x, _, _, emb, xm in loader:
@@ -69,6 +71,7 @@ def main():
             pt = patches.reshape(-1, enc.patch_len).cpu()
             var = torch.arange(B * N).repeat_interleave(attn.shape[1]) % N
             usage += w.sum(0)
+            rand_p.append(pt[torch.randint(len(pt), (min(32, len(pt)),), generator=gen)])
             ent_sum += float(-(w * w.clamp_min(1e-9).log()).sum())
             n_tok += w.shape[0]
             for k in range(K):  # merge this batch's best patches for prototype k
@@ -78,7 +81,9 @@ def main():
                 idx = torch.topk(cand_w, a.top).indices
                 best_w[k], best_p[k], best_var[k] = cand_w[idx], cand_p[idx], cand_v[idx]
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
+    rand_p = torch.cat(rand_p)[:2000]
     np.savez_compressed(a.out, patches=best_p.numpy(), weights=best_w.numpy(), variates=best_var.numpy(),
+                        random_patches=rand_p.numpy(),
                         usage=(usage / usage.sum()).numpy(), entropy=ent_sum / n_tok / np.log(K),
                         columns=np.array(series["columns"]), dataset=cfg.dataset, branch=a.branch,
                         patch_len=enc.patch_len, pdpl_mode=getattr(cfg, "pdpl_mode", "dot"))

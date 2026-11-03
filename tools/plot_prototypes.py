@@ -23,6 +23,15 @@ def spectral_centroid(y):
     return float((f * mag).sum() / (mag.sum() + 1e-12))
 
 
+def coherence(patches, centre):
+    """Mean Pearson correlation between each patch and a reference shape."""
+    a = patches - patches.mean(-1, keepdims=True)
+    b = centre - centre.mean()
+    num = (a * b).sum(-1)
+    den = np.sqrt((a ** 2).sum(-1) * (b ** 2).sum()) + 1e-12
+    return float(np.mean(num / den))
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("npz")
@@ -35,6 +44,11 @@ def main():
     K = P.shape[0]
     means = np.median(P, axis=1)  # robust centre of the retrieved patches
     order = np.argsort([spectral_centroid(m) for m in means])
+    coh = np.mean([coherence(P[k], means[k]) for k in range(K)])
+    if "random_patches" in d.files:
+        R = d["random_patches"]
+        base = np.mean([coherence(R, means[k]) for k in range(K)])
+        print(f"coherence: retrieved patches {coh:.3f} vs random patches {base:.3f}")
     rows = int(np.ceil(K / a.cols))
     lim = np.percentile(np.abs(P[:, : a.show]), 99)
     plt.rcParams.update({"font.family": "serif", "font.size": 8, "axes.edgecolor": MUTED, "axes.linewidth": 0.6})
