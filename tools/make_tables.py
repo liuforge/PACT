@@ -309,6 +309,8 @@ def bench_table(path, caption, label):
              r"\label{" + label + "}", r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l c c c c}", r"\toprule",
              r"Model & Params (M) & Train step (ms) & Inference (ms/batch) & Peak memory (MiB) \\", r"\midrule"]
     for r in b["results"]:
+        if "per variate" in r["model"]:  # the main results use the joint (multivariate) mode of TimesFM-3
+            continue
         step = f"{r['s_per_step'] * 1000:.1f}" if r.get("s_per_step") else "zero-shot"
         params = f"{r['params'] / 1e6:.2f}" if r.get("params") else "--"
         lines.append(f"{r['model']} & {params} & {step} & {r['infer_ms_per_batch']:.1f} & {r['peak_mem_mib']:.0f}" + r" \\")
