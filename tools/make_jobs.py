@@ -153,6 +153,8 @@ LLM_CONTROLS = {
     "llm_none": "--llm none",
     "llm_varstatic": "--llm stored --emb_tag gpt2-var --emb_static 1",  # dataset + variable description only
     "llm_varnorm": "--llm stored --emb_tag gpt2-var-norm",              # description + normalised window
+    "llm_qwen3": "--llm stored --emb_tag Qwen3-0.6B-Base-norm",  # a 2025 LLM (Qwen3-0.6B-Base), same prompt
+    "llm_sundial": "--llm stored --emb_tag sundial-base",        # frozen time-series foundation model (Sundial)
     # prompt-content factorial (level information x units): raw = level + units (TimeCMA), norm = neither
     "llm_raw1f": "--llm stored --emb_tag gpt2-raw1f",  # raw values with one decimal (same precision as the others)
     "llm_gz": "--llm stored --emb_tag gpt2-gz",        # training-split z-score: level kept, units removed
