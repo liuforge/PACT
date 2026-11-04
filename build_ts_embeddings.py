@@ -33,6 +33,11 @@ def main():
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = AutoModelForCausalLM.from_pretrained(a.model, trust_remote_code=True, torch_dtype=torch.float32)
     backbone = model.model.to(dev).eval()
+    # transformers 5 creates non-persistent buffers on the meta device: rebuild the rotary caches (as for Time-MoE)
+    for mod in backbone.modules():
+        if hasattr(mod, "inv_freq") and hasattr(mod, "_set_cos_sin_cache"):
+            mod.inv_freq = 1.0 / (mod.base ** (torch.arange(0, mod.dim, 2, device=dev).float() / mod.dim))
+            mod._set_cos_sin_cache(seq_len=mod.max_position_embeddings, device=dev, dtype=torch.float32)
     s = load_series(a.dataset, a.root_path, a.seq_len)
     x = s["scaled"]
     T, N = x.shape
@@ -55,6 +60,8 @@ def main():
             sd = torch.where(sd > 1e-2, sd, torch.ones_like(sd))  # as Sundial's own RevIN
             series = ((series - mu) / sd).to(dev)
             h = backbone(input_ids=series, use_cache=False).last_hidden_state[:, -1]  # [w*N, d]
+            if not torch.isfinite(h).all():
+                raise RuntimeError("non-finite Sundial hidden states")
             out[w0:w1] = h.reshape(w1 - w0, N, d).float().cpu().numpy().astype(np.float16)
             if (w0 // per) % 20 == 0:
                 print(f"[{a.dataset}] {w1}/{n_win} windows ({time.time() - t0:.0f}s)", flush=True)
