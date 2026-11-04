@@ -115,6 +115,8 @@ def main():
     p.add_argument("--pred_lens", default=None, help="comma list; default = the dataset's four horizons")
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--max_windows", type=int, default=0, help="debug: evaluate only the first n test windows")
+    p.add_argument("--window_stride", type=int, default=1,
+                   help="evaluate every k-th test window (for the slow autoregressive Time-MoE); recorded in results")
     p.add_argument("--device", default="cuda")
     p.add_argument("--out_root", default="./results")
     p.add_argument("--overwrite", type=int, default=0)
@@ -144,6 +146,7 @@ def main():
         targets = np.arange(b1 + L, b2 - H + 1)  # identical to the test windows of train.py
         if a.max_windows:
             targets = targets[:a.max_windows]
+        targets = targets[::a.window_stride]
         if targets[0] - a.context < 0:
             raise ValueError("context longer than the available history")
         se, ae, n, times = 0.0, 0.0, 0, []
@@ -161,7 +164,7 @@ def main():
             se += float(((pred - y) ** 2).sum())
             ae += float(np.abs(pred - y).sum())
             n += y.size
-        test = dict(mse=se / n, mae=ae / n, n_windows=int(len(targets)),
+        test = dict(mse=se / n, mae=ae / n, n_windows=int(len(targets)), window_stride=a.window_stride,
                     infer_s_per_batch=float(np.mean(times[1:] if len(times) > 1 else times)))
         peak = torch.cuda.max_memory_allocated(device) / 2 ** 20 if device.type == "cuda" else None
         os.makedirs(out_dir, exist_ok=True)
