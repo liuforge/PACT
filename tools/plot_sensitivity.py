@@ -31,9 +31,10 @@ def collect(roots, prefix):
             tag = c["tag"]
             if not tag[len(prefix):].isdigit():
                 continue
-            per[(c["dataset"], int(tag[len(prefix):]), c["seed"])].append(r["test"]["mse"])
+            # one value per horizon: the same run may be present in several result roots
+            per[(c["dataset"], int(tag[len(prefix):]), c["seed"])].append((c["pred_len"], r["test"]["mse"]))
     for (ds, val, seed), xs in per.items():
-        v[ds][val].append(np.mean(xs))
+        v[ds][val].append(np.mean(list(dict(xs).values())))
     return v
 
 
