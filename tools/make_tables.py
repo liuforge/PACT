@@ -103,7 +103,8 @@ def main_table(R, models, caption, label):
             # a zero-shot model whose error explodes on some windows (non-finite, or more than ten times the median
             # of the trained models in this cell) is reported as diverged and not ranked
             ref = [v for (tag, _), v in zip(models, mse) if v is not None and not tag.startswith("zs_") and np.isfinite(v)]
-            lim = 10 * float(np.median(ref)) if ref else np.inf
+            fin = [v for v in mse if v is not None and np.isfinite(v)]
+            lim = 10 * float(np.median(ref)) if ref else (10 * min(fin) if fin else np.inf)
             div = [v is not None and (not np.isfinite(v) or v > lim) for v in mse]
             mse = [None if d else v for v, d in zip(mse, div)]
             mae = [None if d else v for v, d in zip(mae, div)]
