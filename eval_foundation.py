@@ -51,13 +51,20 @@ class Toto2:
 
 class TimesFM3:
     znorm = False  # set by --tfm_znorm: the forecaster's own per-series z-normalisation option
+    univariate = False  # set by --tfm_univariate: every variate is forecast as its own series
 
     def __init__(self, ckpt, device):
         from timesfm3.torch.timesfm3_forecaster import TimesFM3Forecaster
         self.model = TimesFM3Forecaster.from_pretrained(ckpt, device=str(device))
 
     @torch.no_grad()
-    def __call__(self, ctx, H):  # multivariate contexts [N, Lc] (variate attention)
+    def __call__(self, ctx, H):  # multivariate contexts [N, Lc] (variate attention), or one series per variate
+        if self.univariate:
+            B, _, N = ctx.shape
+            outs = self.model.predict_batch(contexts=[c[:, j] for c in ctx for j in range(N)], horizon=H,
+                                            use_znorm=self.znorm)
+            f = np.stack([np.asarray(o.forecast).reshape(-1)[:H] for o in outs])  # [B*N, H]
+            return f.reshape(B, N, H).transpose(0, 2, 1)
         outs = self.model.predict_batch(contexts=[c.T for c in ctx], horizon=H, use_znorm=self.znorm)
         return np.stack([np.asarray(o.forecast)[..., :H].reshape(ctx.shape[2], H).T for o in outs])
 
@@ -121,9 +128,12 @@ def main():
     p.add_argument("--out_root", default="./results")
     p.add_argument("--overwrite", type=int, default=0)
     p.add_argument("--tfm_znorm", type=int, default=0, help="TimesFM-3: use_znorm=True in predict_batch")
+    p.add_argument("--tfm_univariate", type=int, default=0, help="TimesFM-3: forecast every variate separately")
     a = p.parse_args()
     TimesFM3.znorm = bool(a.tfm_znorm)
-    tag = a.tag or (f"zs_{os.path.basename(a.ckpt.rstrip('/'))}" + ("-znorm" if a.tfm_znorm else ""))
+    TimesFM3.univariate = bool(a.tfm_univariate)
+    tag = a.tag or (f"zs_{os.path.basename(a.ckpt.rstrip('/'))}" + ("-znorm" if a.tfm_znorm else "")
+                    + ("-uni" if a.tfm_univariate else ""))
     device = torch.device(a.device if (a.device != "cuda" or torch.cuda.is_available()) else "cpu")
     L = BASE_L.get(a.dataset, 96)
     horizons = [int(h) for h in a.pred_lens.split(",")] if a.pred_lens else HORIZONS.get(a.dataset, [96, 192, 336, 720])
