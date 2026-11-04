@@ -20,13 +20,15 @@ DATASETS = {
     "ECL": dict(L=96, H=[96, 192, 336, 720], bs=16),
     "ILI": dict(L=36, H=[24, 36, 48, 60], bs=16, extra="--patch_len 6 --stride 3 --kernel_size 7"),
 }
+# added in the revision for a second high-dimensional dataset (862 variates); only via --datasets Traffic
+EXTRA_DATASETS = {"Traffic": dict(L=96, H=[96, 192, 336, 720], bs=16)}
 # Time-MMD domains with aligned text (tools/prep_mmd.py); univariate target, 7:1:2 split
 MMD_MONTH = dict(L=8, H=[6, 8, 10, 12], bs=16, extra="--patch_len 4 --stride 2 --kernel_size 5")
 MMD_WEEK = dict(L=36, H=[12, 24, 36, 48], bs=16, extra="--patch_len 6 --stride 3 --kernel_size 7")
 for _d in ("Agriculture", "Economy", "Security", "SocialGood", "Traffic"):
-    DATASETS[f"MMD_{_d}"] = MMD_MONTH
+    EXTRA_DATASETS[f"MMD_{_d}"] = MMD_MONTH
 for _d in ("Energy", "Health"):
-    DATASETS[f"MMD_{_d}"] = MMD_WEEK
+    EXTRA_DATASETS[f"MMD_{_d}"] = MMD_WEEK
 MMD_CONDITIONS = {  # what the anchor sees (same model, same adapter)
     "mmd_none": "--llm none",
     "mmd_num": "--llm stored --emb_tag gpt2-norm",           # standardised numbers (the benchmark prompt)
@@ -46,6 +48,7 @@ TIMECMA_OFFICIAL = {
     "ECL": {96: (1e-3, 128, 3, 6, 0.3, 8), 192: (1e-3, 128, 3, 6, 0.3, 8), 336: (1e-3, 128, 3, 6, 0.1, 8), 720: (1e-3, 128, 3, 6, 0.1, 8)},
     "ILI": {24: (5e-5, 16, 1, 1, 0.1, 16), 36: (1e-4, 16, 1, 1, 0.1, 16), 48: (2.5e-3, 16, 1, 1, 0.3, 16), 60: (1e-4, 32, 1, 1, 0.1, 16)},
 }
+TIMECMA_OFFICIAL["Traffic"] = TIMECMA_OFFICIAL["ECL"]  # no official Traffic script: the ECL settings are used
 
 # Time-Series-Library baselines: architecture settings from TSLib scripts (ETT) or the models' own
 # repositories; training follows TSLib (10 epochs, patience 3, lr halved every epoch).
@@ -57,9 +60,9 @@ _PT_ETT = {  # PatchTST, TSLib ETT scripts: H -> (e_layers, n_heads)
     "ETTm2": {96: (3, 16), 192: (3, 2), 336: (1, 4), 720: (3, 4)},
 }
 _TN = {"ETTh1": (16, 32), "ETTh2": (32, 32), "ETTm1": (64, 64), "ETTm2": (32, 32),  # TimesNet (d_model, d_ff)
-       "ECL": (256, 512), "Weather": (32, 32), "ILI": (768, 768)}
+       "ECL": (256, 512), "Weather": (32, 32), "ILI": (768, 768), "Traffic": (512, 512)}
 _IT = {"ETTh1": (256, 256, 2), "ETTh2": (128, 128, 2), "ETTm1": (128, 128, 2), "ETTm2": (128, 128, 2),  # iTransformer
-       "ECL": (512, 512, 3), "Weather": (512, 512, 3), "ILI": (128, 128, 2)}
+       "ECL": (512, 512, 3), "Weather": (512, 512, 3), "ILI": (128, 128, 2), "Traffic": (512, 512, 4)}
 
 
 def tslib_flags(model, ds, H):
@@ -75,7 +78,7 @@ def tslib_flags(model, ds, H):
     elif model == "itransformer":
         dm, dff, e = _IT[ds]
         arch = f"--e_layers {e} --n_heads 8 --d_model {dm} --d_ff {dff}"
-        lr = "5e-4" if ds == "ECL" else lr
+        lr = {"ECL": "5e-4", "Traffic": "1e-3"}.get(ds, lr)
     elif model == "timesnet":
         dm, dff = _TN[ds]
         arch = f"--e_layers 2 --d_model {dm} --d_ff {dff} --top_k 5 --num_kernels 6"
@@ -175,6 +178,9 @@ def main():
     a = p.parse_args()
     seeds = [int(s) for s in a.seeds.split(",")]
     pick = lambda default: a.datasets.split(",") if a.datasets else default  # noqa: E731
+    for d in ([x for x in EXTRA_DATASETS if x.startswith("MMD_")] if a.group == "mmd" else (a.datasets or "").split(",")):
+        if d in EXTRA_DATASETS:  # opt-in datasets: never part of the defaults
+            DATASETS[d] = EXTRA_DATASETS[d]
     jobs = []
     chosen = load_chosen(a.chosen)
 
@@ -272,7 +278,7 @@ def main():
             for H in DATASETS[ds]["H"]:
                 jobs.append(cmd(ds, H, s, tag, f"{full(ds, H)} {fl}".strip(), a.extra))
     elif a.group == "mmd":  # grid {lr} x {d_model} per (domain, H, condition), selected on validation (seed 2024)
-        mmd = [d for d in DATASETS if d.startswith("MMD_")]
+        mmd = [d for d in EXTRA_DATASETS if d.startswith("MMD_")]
         for ds, s, (tag, fl) in itertools.product(pick(mmd), seeds, MMD_CONDITIONS.items()):
             for H, lr, d in itertools.product(DATASETS[ds]["H"], (1e-4, 1e-3), (32, 64)):
                 jobs.append(cmd(ds, H, s, f"{tag}__lr{lr:g}_d{d}",
