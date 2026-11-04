@@ -37,8 +37,10 @@ def get_args():
     a("--random_init", type=int, default=0, help="use the architecture with random weights (control for pre-training)")
     a("--tag", default=None, help="store name; default derived from --model (+ '-randinit')")
     a("--value_format", default=None, help="'int' (TimeCMA) or a format spec such as '.1f' (default: int / .1f)")
-    a("--value_norm", default="none", choices=["none", "window"],
-      help="none: raw values (TimeCMA); window: z-score each variate within the look-back window")
+    a("--value_norm", default="none", choices=["none", "window", "global", "center"],
+      help="none: raw values (TimeCMA); window: z-score each variate within the look-back window; global: z-score "
+           "with the training-split mean/std (keeps the window's level, removes units); center: subtract the "
+           "window mean (removes the level, keeps units)")
     a("--prompt", default="values", choices=["values", "variable", "variable_values"],
       help="values: window prompt only; variable: static description of the dataset and the variable "
            "(one embedding per variate, stored as <tag>_static.npy); variable_values: description + window prompt")
@@ -100,7 +102,8 @@ def embed(prompts, tok, model, device, max_len):
 def paths(args):
     tag = args.tag or (os.path.basename(args.model.rstrip("/")) + ("-randinit" if args.random_init else "")
                        + {"values": "", "variable": "-var", "variable_values": "-var"}[args.prompt]
-                       + ("-norm" if args.value_norm == "window" and args.prompt != "variable" else ""))
+                       + ({"window": "-norm", "global": "-gz", "center": "-ctr"}.get(args.value_norm, "")
+                          if args.prompt != "variable" else ""))
     d = os.path.join(args.out_root, args.dataset)
     os.makedirs(d, exist_ok=True)
     final = os.path.join(d, f"{tag}_L{args.seq_len}.npy")
@@ -153,8 +156,8 @@ def main():
     prog_path = out_path + ".progress"
 
     if args.value_format is None:
-        args.value_format = ".1f" if args.value_norm == "window" else "int"
-    template = TEMPLATE_NORM if args.value_norm == "window" else TEMPLATE
+        args.value_format = "int" if args.value_norm == "none" else ".1f"
+    template = TEMPLATE_NORM if args.value_norm in ("window", "global") else TEMPLATE
     tok, model = load_llm(args, device)
     d_llm = model.config.hidden_size
     var_text = [variable_sentence(args.dataset, c, j) for j, c in enumerate(series["columns"])]
@@ -183,7 +186,13 @@ def main():
         return
 
     # formatted value strings, column by column (reused by every window); window-normalised prompts are per window
-    col_strs = None if args.value_norm == "window" else [[fmt_value(v, args.value_format) for v in raw[:, j]] for j in range(N)]
+    if args.value_norm == "global":  # the training-split z-scoring used by the models, applied to the whole series
+        gz = series["scaled"]
+        col_strs = [[fmt_value(v, args.value_format) for v in gz[:, j]] for j in range(N)]
+    elif args.value_norm == "none":
+        col_strs = [[fmt_value(v, args.value_format) for v in raw[:, j]] for j in range(N)]
+    else:
+        col_strs = None
     date_strs = [date_str(ts, args.dataset) for ts in dates] if dates is not None else [""] * T
     t_start = time.time()
     n_trunc = 0
@@ -194,9 +203,15 @@ def main():
         for w in range(s, e):
             if col_strs is None:
                 win = raw[w:w + L]
-                z = (win - win.mean(0)) / (win.std(0) + 1e-5)
+                z = win - win.mean(0) if args.value_norm == "center" else (win - win.mean(0)) / (win.std(0) + 1e-5)
             for j in range(N):
-                if col_strs is None:
+                if args.value_norm == "global":
+                    values = ", ".join(col_strs[j][w:w + L])
+                    trend = f"{float(gz[w + L - 1, j] - gz[w, j]):.2f}"
+                elif args.value_norm == "center":
+                    values = ", ".join(fmt_value(v, args.value_format) for v in z[:, j])
+                    trend = f"{float(raw[w + L - 1, j] - raw[w, j]):f}"
+                elif col_strs is None:
                     values = ", ".join(fmt_value(v, args.value_format) for v in z[:, j])
                     trend = f"{float(z[-1, j] - z[0, j]):.2f}"
                 else:

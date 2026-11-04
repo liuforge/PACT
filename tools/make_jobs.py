@@ -135,6 +135,10 @@ LLM_CONTROLS = {
     "llm_none": "--llm none",
     "llm_varstatic": "--llm stored --emb_tag gpt2-var --emb_static 1",  # dataset + variable description only
     "llm_varnorm": "--llm stored --emb_tag gpt2-var-norm",              # description + normalised window
+    # prompt-content factorial (level information x units): raw = level + units (TimeCMA), norm = neither
+    "llm_raw1f": "--llm stored --emb_tag gpt2-raw1f",  # raw values with one decimal (same precision as the others)
+    "llm_gz": "--llm stored --emb_tag gpt2-gz",        # training-split z-score: level kept, units removed
+    "llm_ctr": "--llm stored --emb_tag gpt2-ctr",      # window mean removed: level removed, units kept
 }
 
 
