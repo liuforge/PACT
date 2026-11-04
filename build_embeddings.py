@@ -41,9 +41,11 @@ def get_args():
       help="none: raw values (TimeCMA); window: z-score each variate within the look-back window; global: z-score "
            "with the training-split mean/std (keeps the window's level, removes units); center: subtract the "
            "window mean (removes the level, keeps units)")
-    a("--prompt", default="values", choices=["values", "variable", "variable_values"],
+    a("--prompt", default="values", choices=["values", "variable", "variable_values", "text", "values_text"],
       help="values: window prompt only; variable: static description of the dataset and the variable "
-           "(one embedding per variate, stored as <tag>_static.npy); variable_values: description + window prompt")
+           "(one embedding per variate, stored as <tag>_static.npy); variable_values: description + window prompt; "
+           "text: the facts available before the forecast start (<root_path>/<dataset>.text.json, see "
+           "tools/prep_mmd.py) instead of numbers; values_text: window prompt followed by those facts")
     a("--batch_size", type=int, default=256, help="prompts per forward pass")
     a("--chunk", type=int, default=512, help="windows per checkpointed chunk")
     a("--fp16", type=int, default=1)
@@ -101,9 +103,10 @@ def embed(prompts, tok, model, device, max_len):
 
 def paths(args):
     tag = args.tag or (os.path.basename(args.model.rstrip("/")) + ("-randinit" if args.random_init else "")
-                       + {"values": "", "variable": "-var", "variable_values": "-var"}[args.prompt]
+                       + {"values": "", "variable": "-var", "variable_values": "-var", "text": "-text",
+                          "values_text": "-vtext"}[args.prompt]
                        + ({"window": "-norm", "global": "-gz", "center": "-ctr"}.get(args.value_norm, "")
-                          if args.prompt != "variable" else ""))
+                          if args.prompt not in ("variable", "text") else ""))
     d = os.path.join(args.out_root, args.dataset)
     os.makedirs(d, exist_ok=True)
     final = os.path.join(d, f"{tag}_L{args.seq_len}.npy")
@@ -161,6 +164,10 @@ def main():
     tok, model = load_llm(args, device)
     d_llm = model.config.hidden_size
     var_text = [variable_sentence(args.dataset, c, j) for j, c in enumerate(series["columns"])]
+    texts = None
+    if args.prompt in ("text", "values_text"):  # texts[t]: facts dated before row t (no look-ahead)
+        texts = json.load(open(os.path.join(args.root_path, f"{args.dataset}.text.json")))
+        assert len(texts) == T, (len(texts), T)
     if args.prompt == "variable":  # static: one prompt per variate
         vec, _ = embed(var_text, tok, model, device, 1024)
         static = final.replace(f"_L{L}.npy", "_static.npy")
@@ -218,6 +225,9 @@ def main():
                     values = ", ".join(col_strs[j][w:w + L])
                     trend = f"{float(raw[w + L - 1, j] - raw[w, j]):f}"
                 p = template.format(t1=date_strs[w], t2=date_strs[w + L - 1], values=values, freq=freq, trend=trend)
+                if texts is not None:  # window s..s+L-1 may use the facts available when row s+L starts
+                    ctx = texts[min(w + L, T - 1)] or "No relevant reports."
+                    p = ctx if args.prompt == "text" else p + ". " + ctx
                 prompts.append(var_text[j] + " " + p if args.prompt == "variable_values" else p)
                 slots.append((w - lo, j))
         if s == lo + prog["done"] and prog["done"] == 0:

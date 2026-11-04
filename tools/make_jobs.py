@@ -20,6 +20,21 @@ DATASETS = {
     "ECL": dict(L=96, H=[96, 192, 336, 720], bs=16),
     "ILI": dict(L=36, H=[24, 36, 48, 60], bs=16, extra="--patch_len 6 --stride 3 --kernel_size 7"),
 }
+# Time-MMD domains with aligned text (tools/prep_mmd.py); univariate target, 7:1:2 split
+MMD_MONTH = dict(L=8, H=[6, 8, 10, 12], bs=16, extra="--patch_len 4 --stride 2 --kernel_size 5")
+MMD_WEEK = dict(L=36, H=[12, 24, 36, 48], bs=16, extra="--patch_len 6 --stride 3 --kernel_size 7")
+for _d in ("Agriculture", "Economy", "Security", "SocialGood", "Traffic"):
+    DATASETS[f"MMD_{_d}"] = MMD_MONTH
+for _d in ("Energy", "Health"):
+    DATASETS[f"MMD_{_d}"] = MMD_WEEK
+MMD_CONDITIONS = {  # what the anchor sees (same model, same adapter)
+    "mmd_none": "--llm none",
+    "mmd_num": "--llm stored --emb_tag gpt2-norm",           # standardised numbers (the benchmark prompt)
+    "mmd_text": "--llm stored --emb_tag gpt2-text",          # facts available before the forecast start
+    "mmd_vtext": "--llm stored --emb_tag gpt2-vtext-norm",   # standardised numbers followed by the facts
+    "mmd_textshuf": "--llm shuffled --emb_tag gpt2-text",    # facts of a different period (misaligned)
+    "mmd_learned": "--llm learned",                          # learned vectors, same adapter
+}
 
 # official TimeCMA scripts (github ChenxiLiu-HNU/TimeCMA, scripts/*.sh): H -> (lr, channel, e_layer, d_layer, dropout, batch)
 TIMECMA_OFFICIAL = {
@@ -151,7 +166,7 @@ def cmd(ds, H, seed, tag, flags, extra):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main1", "main2", "long", "long2", "fewshot", "screen", "screen2", "viz", "transfer", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel"])
+    p.add_argument("--group", required=True, choices=["pilot", "pilot2", "main1", "main2", "long", "long2", "fewshot", "screen", "screen2", "viz", "transfer", "timecma", "v5", "tslib", "ablation", "llm", "kproto", "kernel", "mmd"])
     p.add_argument("--datasets", default=None, help="comma list (default depends on the group)")
     p.add_argument("--seeds", default="2024")
     p.add_argument("--full", default="", help="flags of the chosen full configuration (after the pilot)")
@@ -256,6 +271,13 @@ def main():
         for ds, s, (tag, fl) in itertools.product(pick(["ETTh1", "ETTh2", "ETTm2", "Weather", "ILI"]), seeds, LLM_CONTROLS.items()):
             for H in DATASETS[ds]["H"]:
                 jobs.append(cmd(ds, H, s, tag, f"{full(ds, H)} {fl}".strip(), a.extra))
+    elif a.group == "mmd":  # grid {lr} x {d_model} per (domain, H, condition), selected on validation (seed 2024)
+        mmd = [d for d in DATASETS if d.startswith("MMD_")]
+        for ds, s, (tag, fl) in itertools.product(pick(mmd), seeds, MMD_CONDITIONS.items()):
+            for H, lr, d in itertools.product(DATASETS[ds]["H"], (1e-4, 1e-3), (32, 64)):
+                jobs.append(cmd(ds, H, s, f"{tag}__lr{lr:g}_d{d}",
+                                f"--token_mode patch --dropout 0.1 --bdca_ffn 0 --lr {lr} --d_model {d} --d_ff {2 * d} {fl}",
+                                a.extra))
     elif a.group == "kproto":
         for ds, s, k in itertools.product(pick(["Weather", "ETTh2"]), seeds, [4, 8, 16, 32, 64]):
             for H in (DATASETS[ds]["H"][0], DATASETS[ds]["H"][2]):
