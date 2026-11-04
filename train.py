@@ -144,10 +144,16 @@ def aux_weight(name, args):
 
 
 @torch.no_grad()
-def evaluate(model, loader, device, args, series=None, timing=False):
+def evaluate(model, loader, device, args, series=None, timing=False, keep=False):
+    """Test/val metrics accumulated batch by batch (Traffic test predictions would not fit in memory);
+    predictions are only kept when keep=True (--save_preds)."""
     model.eval()
     preds, trues = [], []
     batch_times = []
+    se = ae = se_raw = ae_raw = 0.0
+    n = n_win = 0
+    if series is not None:
+        std = torch.as_tensor(series["std"], dtype=torch.float64)
     for x, y, _, emb, xm in loader:
         x, y, xm = x.to(device), y.to(device), xm.to(device)
         emb = emb.to(device) if emb.numel() else None
@@ -159,18 +165,25 @@ def evaluate(model, loader, device, args, series=None, timing=False):
         if timing and device.type == "cuda":
             torch.cuda.synchronize()
         batch_times.append(time.perf_counter() - t0)
-        preds.append(out.float().cpu())
-        trues.append(y.cpu())
-    pred = torch.cat(preds).numpy()
-    true = torch.cat(trues).numpy()
-    res = dict(mse=float(np.mean((pred - true) ** 2)), mae=float(np.mean(np.abs(pred - true))),
-               n_windows=int(pred.shape[0]))
-    if series is not None:  # raw (original-unit) scale
-        pr = pred * series["std"] + series["mean"]
-        tr = true * series["std"] + series["mean"]
-        res.update(mse_raw=float(np.mean((pr - tr) ** 2)), mae_raw=float(np.mean(np.abs(pr - tr))))
+        d = (out.float() - y.float()).double().cpu()
+        se += float((d ** 2).sum())
+        ae += float(d.abs().sum())
+        if series is not None:  # raw (original-unit) scale: the mean cancels in the difference
+            dr = d * std
+            se_raw += float((dr ** 2).sum())
+            ae_raw += float(dr.abs().sum())
+        n += d.numel()
+        n_win += d.shape[0]
+        if keep:
+            preds.append(out.float().cpu())
+            trues.append(y.cpu())
+    res = dict(mse=se / n, mae=ae / n, n_windows=int(n_win))
+    if series is not None:
+        res.update(mse_raw=se_raw / n, mae_raw=ae_raw / n)
     if timing:
         res["infer_s_per_batch"] = float(np.mean(batch_times[1:] if len(batch_times) > 1 else batch_times))
+    pred = torch.cat(preds).numpy() if keep else None
+    true = torch.cat(trues).numpy() if keep else None
     return res, pred, true
 
 
@@ -309,7 +322,7 @@ def main(argv=None):
         torch.save(best_state, ckpt_path)
     peak_mem = torch.cuda.max_memory_allocated(device) / 2 ** 20 if device.type == "cuda" else None
     val, _, _ = evaluate(model, val_loader, device, args, series)
-    test, pred, true = evaluate(model, test_loader, device, args, series, timing=True)
+    test, pred, true = evaluate(model, test_loader, device, args, series, timing=True, keep=bool(args.save_preds))
     if args.save_preds:
         np.savez_compressed(os.path.join(out_dir, "test_preds.npz"), pred=pred.astype(np.float32), true=true.astype(np.float32))
 
