@@ -409,6 +409,15 @@ def main():
                    ("zs_TimeMoE-200M_ctx512", "Time-MoE")]
     w("long.tex", main_table(R, long_models, "Long look-back: trained models with $L=512$ and foundation models with a "
       "512-step context, on the same test targets as Table~\\ref{tab:main_results}.", "tab:long"))
+    w("anchor_source.tex", paired_table(R, "llm_none", [
+        ("llm_gpt2", "GPT-2 (124M, 2019), standardised prompt (PACT)"),
+        ("llm_qwen3", "Qwen3-0.6B-Base (2025), same prompt"),
+        ("llm_sundial", "Sundial (128M), time-series foundation model"),
+        ("llm_learned", "learned vectors (same adapter)"),
+        ("llm_shuffled", "GPT-2, mismatched window")],
+        "Which source should the anchor come from? Relative change of test MSE with respect to the same model "
+        "without anchor (negative: the anchor helps), averaged over horizons and seeds; $p$: Wilcoxon "
+        "signed-rank test over all cells.", "tab:anchor_source"))
     w("prompt_content.tex", paired_table(R, "llm_gpt2", [
         ("llm_gpt2raw", "raw values, integers (TimeCMA template)"), ("llm_raw1f", "raw values, one decimal"),
         ("llm_gz", "training z-score (level kept, units removed)"),
