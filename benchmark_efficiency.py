@@ -108,9 +108,11 @@ def bench_trained(name, flags, a, device):
                 infer_ms_per_batch=float(np.mean(lat) * 1000), peak_mem_mib=peak)
 
 
-def bench_fm(name, cls, ckpt, ctx, a, device):
+def bench_fm(name, cls, ckpt, ctx, a, device, univariate=False):
     import eval_foundation as ef
     torch.cuda.reset_peak_memory_stats(device)
+    if cls == "TimesFM3":
+        ef.TimesFM3.univariate = univariate
     m = getattr(ef, cls)(ckpt, device)
     net = getattr(m.model, "model", m.model)
     n_params = sum(p.numel() for p in net.parameters()) if isinstance(net, torch.nn.Module) else None
@@ -152,13 +154,14 @@ def main():
         torch.cuda.empty_cache()
     if a.fm:
         for name, cls, ckpt in (("TimesFM-3", "TimesFM3", "hf_models/timesfm-3.0-pytorch"),
+                                ("TimesFM-3 (per variate)", "TimesFM3", "hf_models/timesfm-3.0-pytorch"),
                                 ("Toto-2 22M", "Toto2", "hf_models/Toto-2.0-22m"),
                                 ("Toto-2 313M", "Toto2", "hf_models/Toto-2.0-313m"),
                                 ("Time-MoE 50M", "TimeMoE", "hf_models/TimeMoE-50M"),
                                 ("Time-MoE 200M", "TimeMoE", "hf_models/TimeMoE-200M")):
             for ctx in (96, 512):
                 try:
-                    out.append(bench_fm(name, cls, ckpt, ctx, a, device))
+                    out.append(bench_fm(name, cls, ckpt, ctx, a, device, univariate="per variate" in name))
                     print(json.dumps(out[-1]), flush=True)
                 except Exception as e:  # report and continue
                     print(f"{name} ctx {ctx} failed: {e}", flush=True)
