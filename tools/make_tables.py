@@ -13,7 +13,10 @@ import os
 import numpy as np
 from scipy.stats import wilcoxon
 
-DATASETS = ["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL", "ILI"]
+DATASETS = ["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL", "Traffic", "ILI"]
+# runs with identical configurations under two tags: the full ablation model and the GPT-2 control are the
+# selected main-table configuration, so missing (dataset, H, seed) cells fall back to the main-table run
+ALIASES = {"abl_full": "pact", "llm_gpt2": "pact"}
 HORIZONS = {"ILI": [24, 36, 48, 60]}
 MAIN_MODELS = [  # (tag after selection, column title)
     ("pact", "PACT"), ("timecma", "TimeCMA"), ("patchtst", "PatchTST"), ("itransformer", "iTrans."),
@@ -97,12 +100,19 @@ def main_table(R, models, caption, label):
                     mae.append(mean(runs, "mae") if runs else None)
             if all(v is None for v in mse):
                 continue
+            # a zero-shot model whose error explodes on some windows (non-finite, or more than ten times the median
+            # of the trained models in this cell) is reported as diverged and not ranked
+            ref = [v for (tag, _), v in zip(models, mse) if v is not None and not tag.startswith("zs_") and np.isfinite(v)]
+            lim = 10 * float(np.median(ref)) if ref else np.inf
+            div = [v is not None and (not np.isfinite(v) or v > lim) for v in mse]
+            mse = [None if d else v for v, d in zip(mse, div)]
+            mae = [None if d else v for v, d in zip(mae, div)]
             if H != "Avg":
                 best = min(v for v in mse if v is not None)
                 for (tag, _), v in zip(models, mse):
                     if v is not None and round(v, 3) == round(best, 3):
                         wins[tag] += 1
-            cells = [f"{a} & {b}" for a, b in zip(fmt_rank(mse), fmt_rank(mae))]
+            cells = [r"\multicolumn{2}{c}{div.}" if d else f"{a} & {b}" for a, b, d in zip(fmt_rank(mse), fmt_rank(mae), div)]
             rows.append(("" if rows else ds) + f" & {H} & " + " & ".join(cells) + r" \\")
         if rows:
             lines += rows + [r"\midrule"]
@@ -240,7 +250,12 @@ def paired_table(R, ref, variants, caption, label, datasets=None):
             continue
         for r in runs:
             cells[(ds, H, r["seed"])][tag] = r["mse"]
-    dss = sorted({k[0] for k in cells if ref in cells[k]}, key=DATASETS.index)
+    for c in cells.values():
+        for tag, alias in ALIASES.items():
+            if tag not in c and alias in c:
+                c[tag] = c[alias]
+    dss = sorted({k[0] for k in cells if ref in cells[k] and any(t in cells[k] for t, _ in variants)},
+                 key=DATASETS.index)
     lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l " + "c " * (len(dss) + 2) + "}", r"\toprule",
              "Variant & " + " & ".join(dss) + r" & All & $p$ \\", r"\midrule"]
@@ -282,6 +297,20 @@ def efficiency_table(R, models, ds, H, caption, label):
         mem = np.mean([r["mem"] for r in runs if r["mem"] is not None]) if any(r["mem"] for r in runs) else None
         lines.append(f"{name} & {p / 1e6:.2f} & " + (f"{ep:.1f}" if ep else "zero-shot") + f" & {inf:.1f} & "
                      + (f"{mem:.0f}" if mem else "--") + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
+    return "\n".join(lines)
+
+
+def bench_table(path, caption, label):
+    """Efficiency measured by benchmark_efficiency.py on one idle GPU (ETTm1, H=96, batch 32)."""
+    b = json.load(open(path))
+    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + f" GPU: {b['device']}." + "}",
+             r"\label{" + label + "}", r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l c c c c}", r"\toprule",
+             r"Model & Params (M) & Train step (ms) & Inference (ms/batch) & Peak memory (MiB) \\", r"\midrule"]
+    for r in b["results"]:
+        step = f"{r['s_per_step'] * 1000:.1f}" if r.get("s_per_step") else "zero-shot"
+        params = f"{r['params'] / 1e6:.2f}" if r.get("params") else "--"
+        lines.append(f"{r['model']} & {params} & {step} & {r['infer_ms_per_batch']:.1f} & {r['peak_mem_mib']:.0f}" + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
     return "\n".join(lines)
 
@@ -336,6 +365,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--root", required=True, nargs="+", help="one or more results roots (merged)")
     p.add_argument("--out", required=True)
+    p.add_argument("--bench", default=None, help="JSON written by benchmark_efficiency.py")
     a = p.parse_args()
     R = {}
     for root in a.root:  # merge roots; a (dataset, model, horizon, seed) run is counted once
@@ -376,10 +406,21 @@ def main():
                    ("zs_TimeMoE-200M_ctx512", "Time-MoE")]
     w("long.tex", main_table(R, long_models, "Long look-back: trained models with $L=512$ and foundation models with a "
       "512-step context, on the same test targets as Table~\\ref{tab:main_results}.", "tab:long"))
-    w("efficiency.tex", efficiency_table(R, MAIN_MODELS, "ETTm1", 96,
+    w("prompt_content.tex", paired_table(R, "llm_gpt2", [
+        ("llm_gpt2raw", "raw values, integers (TimeCMA template)"), ("llm_raw1f", "raw values, one decimal"),
+        ("llm_gz", "training z-score (level kept, units removed)"),
+        ("llm_ctr", "window-centred (level removed, units kept)")],
+        "What in a raw-value prompt misleads the anchor? Relative change of test MSE with respect to the "
+        "window-standardised prompt of PACT (level and units removed), averaged over horizons and seeds; "
+        "$p$: Wilcoxon signed-rank test over all cells.", "tab:prompt_content"))
+    if a.bench:
+        w("efficiency.tex", bench_table(a.bench, "Cost of every model measured on the same idle GPU (ETTm1, $H=96$, "
+          "batch 32). PACT additionally needs a one-off offline pass of GPT-2 over the prompts.", "tab:efficiency"))
+    else:
+      w("efficiency.tex", efficiency_table(R, MAIN_MODELS, "ETTm1", 96,
       "Efficiency on ETTm1 ($H=96$, measured in the same environment). PACT additionally needs a one-off offline "
       "pass of GPT-2 over the prompts (reported in the text).", "tab:efficiency"))
-    w("versus.tex", versus_table(R, "pact", [(t, n) for t, n in MAIN_MODELS[1:]],
+    w("versus.tex", versus_table(R, "pact", [(t, n) for t, n in MAIN_MODELS[1:] if not t.startswith("zs_")],
       "PACT against each baseline: relative difference of test MSE (negative: PACT is better), paired over horizons "
       "and seeds; Wilcoxon signed-rank $p$ in parentheses.", "tab:versus"))
     w("valtest.tex", val_test_table(a.root, "Rank correlation between validation and test MSE over all trained runs "
