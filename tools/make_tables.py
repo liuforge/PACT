@@ -394,7 +394,7 @@ def main():
     w("ablation.tex", paired_table(R, "abl_full", [
         ("abl_no_decomp", "w/o decomposition"), ("abl_decomp_ma", "moving-average decomposition"),
         ("abl_decomp_fixed", "fixed-bandwidth Gaussian"), ("abl_no_pdpl", "w/o PDPL (anchor only)"),
-        ("abl_xattn", "BDCA $\\rightarrow$ one-way cross-attention"), ("abl_no_bdca", "w/o BDCA"),
+        ("abl_xattn", "BDCA $\\rightarrow$ one-way cross-attention"), ("abl_no_bdca", "w/o BDCA (prompt unused)"),
         ("abl_bdca2", "BDCA with $I=2$"), ("abl_no_div", "w/o $\\mathcal{L}_{div}$"),
         ("abl_no_align", "w/o $\\mathcal{L}_{align}$"), ("abl_no_freq", "w/o $\\mathcal{L}_{freq}$"),
         ("abl_no_all", "w/o decomposition, PDPL and anchor")],

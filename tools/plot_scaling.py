@@ -95,7 +95,7 @@ def main():
     panel(axes[0], c, [("vs. RLinear", "pact", "rlinear"), ("vs. TimeCMA", "pact", "timecma"),
                        ("vs. PatchTST", "pact", "patchtst"), ("vs. iTransformer", "pact", "itransformer")],
           "(a) PACT against the baselines (below 0: PACT better)", "relative MSE (%)", floor=-32)
-    panel(axes[1], c, [("w/o BDCA", "abl_no_bdca", "abl_full"), ("one-way attention", "abl_xattn", "abl_full"),
+    panel(axes[1], c, [("w/o BDCA (prompt unused)", "abl_no_bdca", "abl_full"), ("one-way attention", "abl_xattn", "abl_full"),
                        ("w/o PDPL", "abl_no_pdpl", "abl_full")],
           "(b) Removing or replacing a component (above 0: the component helps)", "relative MSE (%)")
     panel(axes[2], c, [("GPT-2", "llm_gpt2", "llm_none"), ("Qwen3-0.6B", "llm_qwen3", "llm_none"),
