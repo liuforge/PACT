@@ -22,8 +22,7 @@ from make_tables import ALIASES, load  # noqa: E402
 
 ORDER = [("ETTh1", 7), ("ETTh2", 7), ("ETTm1", 7), ("ETTm2", 7), ("ILI", 7), ("Weather", 21), ("ECL", 321),
          ("Traffic", 862)]
-SLOTS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]  # categorical slots 1-4 of the reference palette
-INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
+from palette import BAND, GRID, INK, MUTED, SERIES as SLOTS, edge  # noqa: E402
 MARKERS = ["o", "s", "D", "^"]
 
 
@@ -54,7 +53,7 @@ def panel(ax, c, series, title, xlabel, floor=None, first=False):
         have |= {j for j, v in enumerate(xs) if v is not None}
         pts = [(v, yi + 0.31 - step * i) for yi, v in zip(y, xs) if v is not None]
         ax.scatter([v if floor is None else max(v, floor) for v, _ in pts], [py for _, py in pts], s=22,
-                   marker=MARKERS[i], color=SLOTS[i], edgecolor="white", linewidth=0.6, zorder=3, label=label)
+                   marker=MARKERS[i], color=SLOTS[i], edgecolor=edge(SLOTS[i]), linewidth=0.6, zorder=3, label=label)
         for v, py in pts:  # clipped points carry their value
             if floor is not None and v < floor:
                 ax.annotate(f"{v:.0f}%", (floor, py), xytext=(4, 0), textcoords="offset points", fontsize=6,
@@ -65,7 +64,7 @@ def panel(ax, c, series, title, xlabel, floor=None, first=False):
     ax.axvline(0, color=MUTED, lw=0.7, zorder=1)
     for yi in y[:-1]:
         ax.axhline(yi - 0.5, color=GRID, lw=0.5, zorder=0)
-    ax.axhspan(-0.5, 2.5, color="#f1f0ec", zorder=0)  # 21 and more variates
+    ax.axhspan(-0.5, 2.5, color=BAND, zorder=0)  # 21 and more variates
     ax.set_yticks(y)
     if first:
         ax.set_yticklabels([f"{d} ({n})" for d, n in ORDER], fontsize=6.5, color=INK)

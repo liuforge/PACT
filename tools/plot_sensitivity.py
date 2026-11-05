@@ -10,6 +10,7 @@ import collections
 import glob
 import json
 import os
+import sys
 
 import matplotlib
 
@@ -17,8 +18,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-SERIES = ["#2a78d6", "#eb6834", "#1baf7a"]  # categorical slots 1-3 of the reference palette (validated all-pairs)
-INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from palette import GRID, INK, MUTED, SERIES  # noqa: E402
 
 
 def collect(roots, prefix):

@@ -6,6 +6,8 @@ retrieved training patches (thin) and their median (thick), with the prototype's
   python tools/plot_prototypes.py viz/ETTh1.npz --out figures/prototypes_ETTh1.pdf
 """
 import argparse
+import os
+import sys
 
 import matplotlib
 
@@ -13,8 +15,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-SERIES = "#2a78d6"  # categorical slot 1 of the reference palette
-INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from palette import C1 as SERIES, GRID, INK, MUTED  # noqa: E402
 
 
 def spectral_centroid(y):

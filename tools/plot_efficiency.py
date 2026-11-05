@@ -13,8 +13,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-PACT, TRAINED, FM = "#eb6834", "#2a78d6", "#1baf7a"
-INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from palette import C1 as FM, C2 as TRAINED, C3 as PACT, GRID, INK, MUTED  # noqa: E402
 OFFSET = {  # label placement (points) chosen so that labels do not collide
     "PACT": (6, 4), "TimeCMA": (6, -2), "PatchTST": (6, -6), "iTransformer": (6, -4), "TimesNet": (-7, 3),
     "DLinear": (6, 0), "RLinear": (-4, 8), "TimesFM-3": (-8, 6), "Toto-2 22M": (6, -2), "Toto-2 313M": (-8, 6),

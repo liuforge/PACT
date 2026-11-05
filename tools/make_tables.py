@@ -63,7 +63,7 @@ def mean(runs, key):
     return float(np.mean([r[key] for r in runs]))
 
 
-def shade(v, cap=8.0, top=45):
+def shade(v, cap=8.0, top=40):
     """Cell background for a relative change v (in %): red when the error increases, blue when it decreases,
     intensity proportional to |v| and saturating at cap."""
     k = int(round(min(abs(v) / cap, 1.0) * top))
@@ -101,8 +101,8 @@ def main_table(R, models, caption, label, datasets=None):
              "& & " + " & ".join(r"\multicolumn{2}{c}{" + t + "}" for _, t in models) + r" \\",
              " ".join(rf"\cmidrule(lr){{{3 + 2 * i}-{4 + 2 * i}}}" for i in range(len(models))),
              "Dataset & $H$ & " + " & ".join(["MSE & MAE"] * len(models)) + r" \\", r"\midrule"]
-    wins = collections.Counter()
-    gaps = gap_to_best(R, models)
+    wins, wins_mae = collections.Counter(), collections.Counter()
+    gaps, gaps_mae = gap_to_best(R, models), gap_to_best(R, models, key="mae")
     for ds in datasets or DATASETS:
         rows = []
         for H in horizons(ds) + ["Avg"]:
@@ -131,6 +131,10 @@ def main_table(R, models, caption, label, datasets=None):
                 for (tag, _), v in zip(models, mse):
                     if v is not None and round(v, 3) == round(best, 3):
                         wins[tag] += 1
+                best_mae = min(v for v in mae if v is not None)
+                for (tag, _), v in zip(models, mae):
+                    if v is not None and round(v, 3) == round(best_mae, 3):
+                        wins_mae[tag] += 1
             cells = [r"\multicolumn{2}{c}{div.}" if d else f"{a} & {b}" for a, b, d in zip(fmt_rank(mse), fmt_rank(mae), div)]
             if H == "Avg":  # dataset name, rotated, spanning the rows of the dataset (drawn last, above the shading)
                 n = len(rows) + 1
@@ -141,14 +145,20 @@ def main_table(R, models, caption, label, datasets=None):
         if rows:
             lines += rows + [r"\midrule"]
     lines[-1] = r"\midrule"
-    lines.append(r"\multicolumn{2}{l}{1st count (MSE)} & " + " & ".join(rf"\multicolumn{{2}}{{c}}{{{wins[t]}}}" for t, _ in models) + r" \\")
-    lines.append(r"\multicolumn{2}{l}{Median gap to best (MSE)} & " + " & ".join(
-        rf"\multicolumn{{2}}{{c}}{{{gaps[t]:+.1f}\%}}" if t in gaps else r"\multicolumn{2}{c}{--}" for t, _ in models) + r" \\")
+    # one summary row per metric: first places and median gap to the best model of each cell
+    for name, w, g in (("MSE", wins, gaps), ("MAE", wins_mae, gaps_mae)):
+        top_w, top_g = max(w.values(), default=0), min(g.values(), default=0)
+        fw = lambda t: (r"\first{%d}" if w[t] == top_w and top_w else "%d") % w[t]  # noqa: E731
+        fg = lambda t: (r"\first{%+.1f\%%}" if g[t] == top_g else r"%+.1f\%%") % g[t]  # noqa: E731
+        lines.append(rf"\multicolumn{{2}}{{l}}{{1st count ({name})}} & " + " & ".join(
+            rf"\multicolumn{{2}}{{c}}{{{fw(t)}}}" for t, _ in models) + r" \\")
+        lines.append(rf"\multicolumn{{2}}{{l}}{{Median gap to best ({name})}} & " + " & ".join(
+            rf"\multicolumn{{2}}{{c}}{{{fg(t)}}}" if t in g else r"\multicolumn{2}{c}{--}" for t, _ in models) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{adjustbox}", r"\end{table*}"]
     return "\n".join(lines)
 
 
-def gap_to_best(R, models):
+def gap_to_best(R, models, key="mse"):
     """Median relative excess of test MSE over the best model of each (dataset, horizon) cell. Cells are those where
     every trained model has results; the best is taken over all models present in the cell, and a zero-shot model
     is averaged over the cells it has."""
@@ -156,7 +166,7 @@ def gap_to_best(R, models):
     cells = [(ds, H) for ds in DATASETS for H in horizons(ds) if all((ds, t, H) in R for t in trained)]
     out = {}
     for t, _ in models:
-        g = [mean(R[(ds, t, H)], "mse") / min(mean(R[(ds, u, H)], "mse") for u, _ in models if (ds, u, H) in R) - 1
+        g = [mean(R[(ds, t, H)], key) / min(mean(R[(ds, u, H)], key) for u, _ in models if (ds, u, H) in R) - 1
              for ds, H in cells if (ds, t, H) in R]
         if g:
             out[t] = 100 * np.median(g)  # median: one diverging zero-shot cell must not dominate
@@ -404,7 +414,7 @@ def main():
     w = lambda name, txt: open(os.path.join(a.out, name), "w").write(txt + "\n")  # noqa: E731
     w("main.tex", main_table(R, MAIN_MODELS, "Forecasting results (test MSE/MAE, mean of three seeds; z-scored scale). "
       "All trained models are re-run with the same splits, windows and validation-based model selection; foundation "
-      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). \\first{Red}: best; \\runnerup{blue}: second; shaded rows: average over horizons.",
+      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). \\first{Coral}: best; \\runnerup{plum}: second; shaded rows: average over horizons.",
       "tab:main_results"))
     w("main_full.tex", full_table(R, MAIN_MODELS, "Test MSE (mean $\\pm$ standard deviation over three seeds).",
       "tab:detailed"))
