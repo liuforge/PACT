@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from palette import C1 as SERIES, GRID, INK, MUTED  # noqa: E402
+from palette import C1 as SERIES, GRID, INK, MUTED, apply_style  # noqa: E402
 
 
 def spectral_centroid(y):
@@ -53,7 +53,8 @@ def main():
         print(f"coherence: retrieved patches {coh:.3f} vs random patches {base:.3f}")
     rows = int(np.ceil(K / a.cols))
     lim = np.percentile(np.abs(P[:, : a.show]), 99)
-    plt.rcParams.update({"font.family": "serif", "font.size": 8, "axes.edgecolor": MUTED, "axes.linewidth": 0.6})
+    apply_style(plt, 8)
+    plt.rcParams.update({"axes.edgecolor": MUTED, "axes.linewidth": 0.6})
     fig, axes = plt.subplots(rows, a.cols, figsize=(1.7 * a.cols, 1.25 * rows), sharex=True, sharey=True)
     for i, ax in enumerate(np.ravel(axes)):
         if i >= K:

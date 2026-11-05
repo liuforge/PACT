@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from palette import GRID, INK, MUTED, SERIES  # noqa: E402
+from palette import GRID, INK, MUTED, SERIES, apply_style  # noqa: E402
 
 
 def collect(roots, prefix):
@@ -66,7 +66,7 @@ def main():
     p.add_argument("--root", nargs="+", required=True)
     p.add_argument("--out", required=True)
     a = p.parse_args()
-    plt.rcParams.update({"font.family": "serif", "font.size": 8})
+    apply_style(plt, 8)
     fig, axes = plt.subplots(1, 2, figsize=(6.4, 2.4), sharey=True)
     panel(axes[0], collect(a.root, "K"), 16, "number of prototypes $K$")
     panel(axes[1], collect(a.root, "ks"), 25, "kernel width $k$")

@@ -22,7 +22,7 @@ from make_tables import ALIASES, load  # noqa: E402
 
 ORDER = [("ETTh1", 7), ("ETTh2", 7), ("ETTm1", 7), ("ETTm2", 7), ("ILI", 7), ("Weather", 21), ("ECL", 321),
          ("Traffic", 862)]
-from palette import BAND, GRID, INK, MUTED, SERIES as SLOTS, edge  # noqa: E402
+from palette import BAND, GRID, INK, MUTED, SERIES as SLOTS, edge, apply_style  # noqa: E402
 MARKERS = ["o", "s", "D", "^"]
 
 
@@ -90,7 +90,7 @@ def main():
             seen = {r["seed"] for r in R.get(k, [])}
             R.setdefault(k, []).extend(r for r in v if r["seed"] not in seen)
     c = cells(R)
-    plt.rcParams.update({"font.family": "serif", "font.size": 8})
+    apply_style(plt, 8)
     fig, axes = plt.subplots(1, 3, figsize=(6.9, 2.75), sharey=True)
     panel(axes[0], c, [("RLinear", "pact", "rlinear"), ("TimeCMA", "pact", "timecma"),
                        ("PatchTST", "pact", "patchtst"), ("iTransformer", "pact", "itransformer")],

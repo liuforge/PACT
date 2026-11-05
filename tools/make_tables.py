@@ -440,10 +440,11 @@ def main():
     w("transfer.tex", transfer_table(R, "Cross-domain zero-shot forecasting (test MSE on the target, averaged over horizons "
       "and seeds): the model is trained on the source dataset only.", "tab:transfer"))
     long_models = [("L512_pact", "PACT"), ("L512_patchtst", "PatchTST"), ("L512_rlinear", "RLinear"),
-                   ("zs_timesfm-3.0-pytorch_ctx512", "TimesFM-3"), ("zs_Toto-2.0-313m_ctx512", "Toto-2"),
-                   ("zs_TimeMoE-200M_ctx512", "Time-MoE")]
+                   ("zs_timesfm-3.0-pytorch_ctx512", "TimesFM-3"), ("zs_Toto-2.0-313m_ctx512", "Toto-2")]
+    # Time-MoE is not run with a 512-step context (cost, see the efficiency figure)
     w("long.tex", main_table(R, long_models, "Long look-back: trained models with $L=512$ and foundation models with a "
-      "512-step context, on the same test targets as Table~\\ref{tab:main_results}.", "tab:long",
+      "512-step context, on the same test targets as the main results (Time-MoE is not run with this context because of its "
+      "cost).", "tab:long",
       datasets=["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather"]))
     w("anchor_source.tex", paired_table(R, "llm_none", [
         ("llm_gpt2", "GPT-2 (124M, 2019), standardised prompt (PACT)"),

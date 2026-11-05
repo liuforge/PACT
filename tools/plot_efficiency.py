@@ -17,7 +17,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from palette import C1 as FM, C2 as TRAINED, C3 as PACT, GRID, INK, MUTED  # noqa: E402
+from palette import C1 as FM, C2 as TRAINED, C3 as PACT, GRID, INK, MUTED, apply_style  # noqa: E402
 OFFSET = {  # label placement (points) chosen so that labels do not collide
     "PACT": (6, 4), "TimeCMA": (6, -2), "PatchTST": (6, -6), "iTransformer": (6, -4), "TimesNet": (-7, 3),
     "DLinear": (6, 0), "RLinear": (-4, 8), "TimesFM-3": (-8, 6), "Toto-2 22M": (6, -2), "Toto-2 313M": (-8, 6),
@@ -31,7 +31,7 @@ def main():
     a = p.parse_args()
     rows = [r for r in json.load(open(a.bench))["results"]
             if "per variate" not in r["model"] and "ctx 512" not in r["model"] and r["model"] != "PACT (no anchor)"]
-    plt.rcParams.update({"font.family": "serif", "font.size": 7})
+    apply_style(plt, 7)
     fig, (ax, bx) = plt.subplots(1, 2, figsize=(6.9, 2.45), gridspec_kw={"width_ratios": [1.45, 1]})
     for r in rows:
         name = r["model"].replace(" (ctx 96)", "")

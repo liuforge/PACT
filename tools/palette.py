@@ -7,3 +7,9 @@ INK, MUTED, GRID, BAND = "#1F1A24", "#5F5866", "#E6E3EA", "#F4F3F5"
 def edge(c):
     """Marker edge: yellow needs a dark outline on white, the other hues a white ring."""
     return C2 if c == C4 else "white"
+
+
+def apply_style(plt, size=8):
+    """Times text and STIX math (the paper uses Times), fonts embedded as TrueType (no Type 3 fonts)."""
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["Times New Roman", "Nimbus Roman", "STIXGeneral"],
+                         "mathtext.fontset": "stix", "font.size": size, "pdf.fonttype": 42, "ps.fonttype": 42})
