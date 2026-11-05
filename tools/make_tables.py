@@ -18,6 +18,7 @@ DATASETS = ["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL", "Traffic", "IL
 # selected main-table configuration, so missing (dataset, H, seed) cells fall back to the main-table run
 ALIASES = {"abl_full": "pact", "llm_gpt2": "pact"}
 HORIZONS = {"ILI": [24, 36, 48, 60]}
+SHADE_NOTE = r" Shading: \swatch{upc!30}{higher} / \swatch{downc!30}{lower} error than the reference; bold: $p<0.05$."
 MAIN_MODELS = [  # (tag after selection, column title)
     ("pact", "PACT"), ("timecma", "TimeCMA"), ("patchtst", "PatchTST"), ("itransformer", "iTrans."),
     ("timesnet", "TimesNet"), ("dlinear", "DLinear"), ("rlinear", "RLinear"),
@@ -62,8 +63,24 @@ def mean(runs, key):
     return float(np.mean([r[key] for r in runs]))
 
 
+def shade(v, cap=8.0, top=45):
+    """Cell background for a relative change v (in %): red when the error increases, blue when it decreases,
+    intensity proportional to |v| and saturating at cap."""
+    k = int(round(min(abs(v) / cap, 1.0) * top))
+    return "" if k < 3 else rf"\cellcolor{{{'upc' if v > 0 else 'downc'}!{k}}}"
+
+
+def pct_cell(v, p=None):
+    v = 0.0 if round(v, 1) == 0 else v  # no "-0.0"
+    return shade(v) + f"${v:+.1f}$\\%"
+
+
+def p_cell(p):
+    return rf"\sig{{{p:.3f}}}" if p < 0.05 else f"{p:.3f}"
+
+
 def fmt_rank(vals, digits=3):
-    """Bold best, underline second (ties share the rank)."""
+    """Best in red and bold, second in blue and underlined (ties share the rank)."""
     finite = sorted({round(v, digits) for v in vals if v is not None})
     out = []
     for v in vals:
@@ -72,14 +89,15 @@ def fmt_rank(vals, digits=3):
             continue
         s = f"{v:.{digits}f}"
         r = round(v, digits)
-        out.append(r"\textbf{" + s + "}" if r == finite[0] else (r"\underline{" + s + "}" if len(finite) > 1 and r == finite[1] else s))
+        out.append(r"\first{" + s + "}" if r == finite[0] else (r"\runnerup{" + s + "}" if len(finite) > 1 and r == finite[1] else s))
     return out
 
 
 def main_table(R, models, caption, label, datasets=None):
-    cols = "l l " + " ".join(["cc"] * len(models))
+    cols = "c c " + r">{\columncolor{oursbg}}c>{\columncolor{oursbg}}c " + " ".join(["cc"] * (len(models) - 1))
     lines = [r"\begin{table*}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
-             r"\resizebox{\textwidth}{!}{%", r"\begin{tabular}{" + cols + "}", r"\toprule",
+             r"\setlength{\tabcolsep}{3.2pt}", r"\begin{adjustbox}{max width=\textwidth}",
+             r"\begin{tabular}{" + cols + "}", r"\toprule",
              "& & " + " & ".join(r"\multicolumn{2}{c}{" + t + "}" for _, t in models) + r" \\",
              " ".join(rf"\cmidrule(lr){{{3 + 2 * i}-{4 + 2 * i}}}" for i in range(len(models))),
              "Dataset & $H$ & " + " & ".join(["MSE & MAE"] * len(models)) + r" \\", r"\midrule"]
@@ -114,14 +132,19 @@ def main_table(R, models, caption, label, datasets=None):
                     if v is not None and round(v, 3) == round(best, 3):
                         wins[tag] += 1
             cells = [r"\multicolumn{2}{c}{div.}" if d else f"{a} & {b}" for a, b, d in zip(fmt_rank(mse), fmt_rank(mae), div)]
-            rows.append(("" if rows else ds) + f" & {H} & " + " & ".join(cells) + r" \\")
+            if H == "Avg":  # dataset name, rotated, spanning the rows of the dataset (drawn last, above the shading)
+                n = len(rows) + 1
+                rows.append(r"\rowcolor{avgbg}\cellcolor{white}\multirow{-" + str(n) + r"}{*}{\rotatebox[origin=c]{90}{"
+                            + ds + "}}" + " & Avg & " + " & ".join(cells) + r" \\")
+            else:
+                rows.append(f" & {H} & " + " & ".join(cells) + r" \\")
         if rows:
             lines += rows + [r"\midrule"]
     lines[-1] = r"\midrule"
     lines.append(r"\multicolumn{2}{l}{1st count (MSE)} & " + " & ".join(rf"\multicolumn{{2}}{{c}}{{{wins[t]}}}" for t, _ in models) + r" \\")
     lines.append(r"\multicolumn{2}{l}{Median gap to best (MSE)} & " + " & ".join(
         rf"\multicolumn{{2}}{{c}}{{{gaps[t]:+.1f}\%}}" if t in gaps else r"\multicolumn{2}{c}{--}" for t, _ in models) + r" \\")
-    lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table*}"]
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{adjustbox}", r"\end{table*}"]
     return "\n".join(lines)
 
 
@@ -173,12 +196,12 @@ def versus_table(R, ours, baselines, caption, label):
             x, y = np.array(x), np.array(y)
             allx += list(x)
             ally += list(y)
-            cell = f"{np.mean((y - x) / x) * 100:+.1f}\\%"
+            cell = pct_cell(np.mean((y - x) / x) * 100)
             if len(x) >= 6:
                 cell += f" ({wilcoxon(x, y).pvalue:.3f})"
             row.append(cell)
         x, y = np.array(allx), np.array(ally)
-        row.append(f"{np.mean((y - x) / x) * 100:+.1f}\\% ({wilcoxon(x, y).pvalue:.3f})" if len(x) >= 6 else "--")
+        row.append(pct_cell(np.mean((y - x) / x) * 100) + f" ({wilcoxon(x, y).pvalue:.3f})" if len(x) >= 6 else "--")
         lines.append(f"{name} & " + " & ".join(row) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
     return "\n".join(lines)
@@ -257,8 +280,10 @@ def paired_table(R, ref, variants, caption, label, datasets=None):
                 c[tag] = c[alias]
     dss = sorted({k[0] for k in cells if ref in cells[k] and any(t in cells[k] for t, _ in variants)},
                  key=DATASETS.index)
-    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
-             r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l " + "c " * (len(dss) + 2) + "}", r"\toprule",
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{" + caption + SHADE_NOTE + "}", r"\label{" + label + "}",
+             r"\small\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.1}",
+             r"\begin{adjustbox}{max width=\linewidth}",
+             r"\begin{tabular}{l " + "c" * len(dss) + " | c c}", r"\toprule",
              "Variant & " + " & ".join(dss) + r" & All & $p$ \\", r"\midrule"]
     for tag, name in variants:
         row = []
@@ -272,15 +297,15 @@ def paired_table(R, ref, variants, caption, label, datasets=None):
             y = np.array([cells[k][tag] for k in ks])
             allx += list(x)
             ally += list(y)
-            row.append(f"{np.mean((y - x) / x) * 100:+.1f}\\%")
+            row.append(pct_cell(np.mean((y - x) / x) * 100))
         if len(allx) >= 6:
             x, y = np.array(allx), np.array(ally)
             p = wilcoxon(x, y).pvalue if np.any(x != y) else 1.0
-            row += [f"{np.mean((y - x) / x) * 100:+.1f}\\%", f"{p:.3f}"]
+            row += [pct_cell(np.mean((y - x) / x) * 100), p_cell(p)]
         else:
             row += ["--", "--"]
         lines.append(f"{name} & " + " & ".join(row) + r" \\")
-    lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{adjustbox}", r"\end{table}"]
     return "\n".join(lines)
 
 
@@ -379,7 +404,7 @@ def main():
     w = lambda name, txt: open(os.path.join(a.out, name), "w").write(txt + "\n")  # noqa: E731
     w("main.tex", main_table(R, MAIN_MODELS, "Forecasting results (test MSE/MAE, mean of three seeds; z-scored scale). "
       "All trained models are re-run with the same splits, windows and validation-based model selection; foundation "
-      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). \\textbf{Bold}: best; \\underline{underline}: second.",
+      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). \\first{Red}: best; \\runnerup{blue}: second; shaded rows: average over horizons.",
       "tab:main_results"))
     w("main_full.tex", full_table(R, MAIN_MODELS, "Test MSE (mean $\\pm$ standard deviation over three seeds).",
       "tab:detailed"))

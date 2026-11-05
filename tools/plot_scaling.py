@@ -44,39 +44,40 @@ def rel(c, ds, num, den):
     return 100 * np.mean([c[k][num] / c[k][den] - 1 for k in ks]) if ks else None
 
 
-def panel(ax, c, series, title, ylabel=None, floor=None):
-    x = np.arange(len(ORDER))
-    width = 0.8 / len(series)
+def panel(ax, c, series, title, xlabel, floor=None, first=False):
+    """Horizontal dot plot: one row per dataset (top: fewest variates), one dodged marker per series."""
+    y = np.arange(len(ORDER))[::-1]
+    step = 0.62 / max(len(series) - 1, 1)
     have = set()
     for i, (label, num, den) in enumerate(series):
-        ys = [rel(c, ds, num, den) for ds, _ in ORDER]
-        have |= {j for j, y in enumerate(ys) if y is not None}
-        pts = [(xi - 0.4 + width * (i + 0.5), y) for xi, y in zip(x, ys) if y is not None]
-        xs = [px for px, _ in pts]
-        ys = [py if floor is None else max(py, floor) for _, py in pts]
-        ax.scatter(xs, ys, s=30, marker=MARKERS[i], color=SLOTS[i], edgecolor="white", linewidth=0.8, zorder=3,
-                   label=label)
-        for (px, py) in pts:  # clipped points carry their value
-            if floor is not None and py < floor:
-                ax.annotate(f"{py:.0f}%", (px, floor), xytext=(4, 0), textcoords="offset points", fontsize=6.5,
+        xs = [rel(c, ds, num, den) for ds, _ in ORDER]
+        have |= {j for j, v in enumerate(xs) if v is not None}
+        pts = [(v, yi + 0.31 - step * i) for yi, v in zip(y, xs) if v is not None]
+        ax.scatter([v if floor is None else max(v, floor) for v, _ in pts], [py for _, py in pts], s=22,
+                   marker=MARKERS[i], color=SLOTS[i], edgecolor="white", linewidth=0.6, zorder=3, label=label)
+        for v, py in pts:  # clipped points carry their value
+            if floor is not None and v < floor:
+                ax.annotate(f"{v:.0f}%", (floor, py), xytext=(4, 0), textcoords="offset points", fontsize=6,
                             color=MUTED, va="center")
     for j in set(range(len(ORDER))) - have:
-        ax.text(j, 0, "not run", ha="center", va="bottom", fontsize=6.5, color=MUTED)
-    ax.axhline(0, color=MUTED, lw=0.8, zorder=1)
-    for xi in x[:-1]:
-        ax.axvline(xi + 0.5, color=GRID, lw=0.6, zorder=0)
-    ax.axvspan(4.5, 5.5, color="#f4f3f0", zorder=0)
-    ax.axvspan(5.5, 7.5, color="#ebe9e4", zorder=0)
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"{d}\n({n})" for d, n in ORDER], fontsize=6.5, color=MUTED)
-    ax.set_xlim(-0.5, len(ORDER) - 0.5)
-    ax.set_title(title, fontsize=8, color=INK, loc="left")
-    if ylabel:
-        ax.set_ylabel(ylabel, color=MUTED, fontsize=7.5)
-    ax.tick_params(axis="y", colors=MUTED, labelsize=7)
-    for sp in ("top", "right"):
+        ax.text(0.5, y[j], "not run", transform=ax.get_yaxis_transform(), ha="center", va="center", fontsize=6,
+                color=MUTED)
+    ax.axvline(0, color=MUTED, lw=0.7, zorder=1)
+    for yi in y[:-1]:
+        ax.axhline(yi - 0.5, color=GRID, lw=0.5, zorder=0)
+    ax.axhspan(-0.5, 2.5, color="#f1f0ec", zorder=0)  # 21 and more variates
+    ax.set_yticks(y)
+    if first:
+        ax.set_yticklabels([f"{d} ({n})" for d, n in ORDER], fontsize=6.5, color=INK)
+    ax.tick_params(axis="y", length=0, labelleft=first)
+    ax.set_ylim(-0.5, len(ORDER) - 0.5)
+    ax.set_title(title, fontsize=7.5, color=INK, loc="left", pad=24)
+    ax.set_xlabel(xlabel, color=MUTED, fontsize=6.5)
+    ax.tick_params(axis="x", colors=MUTED, labelsize=6.5)
+    for sp in ("top", "right", "left"):
         ax.spines[sp].set_visible(False)
-    ax.legend(frameon=False, fontsize=6.5, loc="lower left", handletextpad=0.2, borderaxespad=0.2)
+    ax.legend(frameon=False, fontsize=6, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2, handletextpad=0.1,
+              columnspacing=0.6, borderaxespad=0.0)
 
 
 def main():
@@ -91,23 +92,18 @@ def main():
             R.setdefault(k, []).extend(r for r in v if r["seed"] not in seen)
     c = cells(R)
     plt.rcParams.update({"font.family": "serif", "font.size": 8})
-    fig, axes = plt.subplots(3, 1, figsize=(6.6, 6.4), sharex=True)
-    panel(axes[0], c, [("vs. RLinear", "pact", "rlinear"), ("vs. TimeCMA", "pact", "timecma"),
-                       ("vs. PatchTST", "pact", "patchtst"), ("vs. iTransformer", "pact", "itransformer")],
-          "(a) PACT against the baselines (below 0: PACT better)", "relative MSE (%)", floor=-32)
+    fig, axes = plt.subplots(1, 3, figsize=(6.9, 2.75), sharey=True)
+    panel(axes[0], c, [("RLinear", "pact", "rlinear"), ("TimeCMA", "pact", "timecma"),
+                       ("PatchTST", "pact", "patchtst"), ("iTransformer", "pact", "itransformer")],
+          "(a) PACT vs. baseline", "rel. MSE (%), < 0: PACT better", floor=-32, first=True)
     panel(axes[1], c, [("w/o BDCA (prompt unused)", "abl_no_bdca", "abl_full"), ("one-way attention", "abl_xattn", "abl_full"),
                        ("w/o PDPL", "abl_no_pdpl", "abl_full")],
-          "(b) Removing or replacing a component (above 0: the component helps)", "relative MSE (%)")
+          "(b) Component removed or replaced", "rel. MSE (%), > 0: component helps")
     panel(axes[2], c, [("GPT-2", "llm_gpt2", "llm_none"), ("Qwen3-0.6B", "llm_qwen3", "llm_none"),
                        ("Sundial", "llm_sundial", "llm_none"), ("learned vectors", "llm_learned", "llm_none")],
-          "(c) Anchor source, relative to no anchor (below 0: the anchor helps)", "relative MSE (%)")
-    for ax in axes:
-        lo, hi = ax.get_ylim()
-        ax.set_ylim(min(lo, -2), max(hi, 2))
-    axes[0].set_ylim(-34, axes[0].get_ylim()[1])
-    fig.text(0.99, 0.005, "datasets ordered by number of variates (in brackets); shaded: 21 and more variates",
-             ha="right", fontsize=6.5, color=MUTED)
-    fig.tight_layout(rect=(0, 0.015, 1, 1))
+          "(c) Anchor source vs. no anchor", "rel. MSE (%), < 0: anchor helps")
+    axes[0].set_xlim(-34, axes[0].get_xlim()[1])
+    fig.tight_layout(w_pad=0.6)
     fig.savefig(a.out, bbox_inches="tight")
     fig.savefig(a.out.rsplit(".", 1)[0] + ".png", dpi=200, bbox_inches="tight")
     print(f"saved {a.out}")

@@ -39,26 +39,31 @@ def main():
     pact = selected(a.root, "pact__")
     rl = selected(a.root, "rlinear__")
     dl = selected(a.root, "dlinear__")
+    def lr(x):
+        m, e = f"{x:.0e}".split("e")
+        return f"{m}e{int(e)}"
+
+    hs = [96, 192, 336, 720]
     lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{Hyper-parameters selected on the validation set (seed 2024). "
-             r"PACT: learning rate / width $D$ / BDCA feed-forward layer (1: on); RLinear and DLinear: learning rate. "
-             r"All other settings are given in Section~\ref{sec:setup} and the official scripts of the baselines.}",
-             r"\label{tab:hparams}", r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l l c c c}", r"\toprule",
-             r"Dataset & $H$ & PACT & RLinear & DLinear \\", r"\midrule"]
+             r"PACT: learning rate / width $D$ / BDCA feed-forward layer (\ding{51}: on); RLinear and DLinear: learning rate. "
+             r"For ILI the horizons are 24, 36, 48 and 60. All other settings are given in Section~\ref{sec:setup}.}",
+             r"\label{tab:hparams}", r"\small\setlength{\tabcolsep}{5pt}", r"\begin{adjustbox}{max width=\linewidth}",
+             r"\begin{tabular}{l cccc cccc}", r"\toprule",
+             r" & \multicolumn{4}{c}{PACT} & \multicolumn{4}{c}{RLinear / DLinear} \\",
+             r"\cmidrule(lr){2-5} \cmidrule(lr){6-9}",
+             r"Dataset $\backslash$ $H$ & " + " & ".join(map(str, hs)) + " & " + " & ".join(map(str, hs)) + r" \\", r"\midrule"]
     for ds in DATASETS:
-        rows = []
-        for H in horizons(ds):
+        hz = horizons(ds)
+        if not any((ds, H) in pact for H in hz):
+            continue
+        pc, lc = [], []
+        for H in hz:
             c = pact.get((ds, H))
-            if c is None:
-                continue
-            cell = f"{c['lr']:g} / {c['d_model']} / {c['bdca_ffn']}"
-            r = rl.get((ds, H))
-            d = dl.get((ds, H))
-            rows.append(("" if rows else ds) + f" & {H} & {cell} & " + (f"{r['lr']:g}" if r else "--") + " & "
-                        + (f"{d['lr']:g}" if d else "--") + r" \\")
-        if rows:
-            lines += rows + [r"\midrule"]
-    lines[-1] = r"\bottomrule"
-    lines += [r"\end{tabular}}", r"\end{table}", ""]
+            pc.append(f"{lr(c['lr'])} / {c['d_model']} / " + (r"\ding{51}" if c["bdca_ffn"] else "--") if c else "--")
+            r, d = rl.get((ds, H)), dl.get((ds, H))
+            lc.append((lr(r["lr"]) if r else "--") + " / " + (lr(d["lr"]) if d else "--"))
+        lines.append(f"{ds} & " + " & ".join(pc) + " & " + " & ".join(lc) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{adjustbox}", r"\end{table}", ""]
     open(a.out, "w").write("\n".join(lines) + "\n")
     # baseline architecture settings (from the official scripts): supplementary material
     lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{Architecture settings of the trained baselines, taken from "
@@ -66,7 +71,7 @@ def main():
               r"batch; iTransformer: $d_{model}$ / $d_{ff}$ / layers; TimesNet: $d_{model}$ / $d_{ff}$). PatchTST uses "
               r"the per-horizon settings of the Time-Series-Library scripts on ETT and 3 layers, 16 heads, $d_{model}=128$ "
               r"elsewhere (4 heads, $d_{model}=16$ on ILI).}", r"\label{tab:baseline_hparams}",
-              r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l l c c c}", r"\toprule",
+              r"\begin{adjustbox}{max width=\linewidth}", r"\begin{tabular}{l l c c c}", r"\toprule",
               r"Dataset & $H$ & TimeCMA & iTransformer & TimesNet \\", r"\midrule"]
     for ds in DATASETS:
         if ds not in TIMECMA_OFFICIAL:
@@ -81,7 +86,7 @@ def main():
                         + (" / ".join(str(x) for x in tn) if tn else "--") + r" \\")
         lines += rows + [r"\midrule"]
     lines[-1] = r"\bottomrule"
-    lines += [r"\end{tabular}}", r"\end{table}"]
+    lines += [r"\end{tabular}", r"\end{adjustbox}", r"\end{table}"]
     open(a.out.replace(".tex", "_baselines.tex"), "w").write("\n".join(lines) + "\n")
     print(f"written {a.out}: {len(pact)} PACT cells")
 
