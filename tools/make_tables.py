@@ -78,7 +78,7 @@ def fmt_rank(vals, digits=3):
 
 def main_table(R, models, caption, label, datasets=None):
     cols = "l l " + " ".join(["cc"] * len(models))
-    lines = [r"\begin{table*}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+    lines = [r"\begin{table*}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\resizebox{\textwidth}{!}{%", r"\begin{tabular}{" + cols + "}", r"\toprule",
              "& & " + " & ".join(r"\multicolumn{2}{c}{" + t + "}" for _, t in models) + r" \\",
              " ".join(rf"\cmidrule(lr){{{3 + 2 * i}-{4 + 2 * i}}}" for i in range(len(models))),
@@ -149,7 +149,7 @@ def versus_table(R, ours, baselines, caption, label):
     """Relative test-MSE difference of ours vs. each baseline per dataset (negative = ours better), paired over
     (horizon, seed); Wilcoxon p in parentheses when a dataset has at least six pairs."""
     dss = [ds for ds in DATASETS if any((ds, ours, H) in R for H in horizons(ds))]
-    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l " + "c " * (len(dss) + 1) + "}", r"\toprule",
              "vs. & " + " & ".join(dss) + r" & All \\", r"\midrule"]
     for tag, name in baselines:
@@ -199,7 +199,7 @@ def val_test_table(roots, caption, label):
             key = (c["dataset"], c["pred_len"], c["tag"], c["seed"])
             pts[key[:2]].append((key, r["val"]["mse"], r["test"]["mse"]))
     dss = [ds for ds in DATASETS if any(k[0] == ds for k in pts)]
-    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\begin{tabular}{l " + "c " * 5 + "}", r"\toprule", r"Dataset & \multicolumn{4}{c}{Spearman $\rho$ per horizon} & runs \\", r"\midrule"]
     for ds in dss:
         cells, n = [], 0
@@ -218,7 +218,7 @@ def val_test_table(roots, caption, label):
 
 def full_table(R, models, caption, label):
     """Appendix: mean +- std of MSE for every cell."""
-    lines = [r"\begin{table*}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+    lines = [r"\begin{table*}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\resizebox{\textwidth}{!}{%", r"\begin{tabular}{l l " + "c " * len(models) + "}", r"\toprule",
              "Dataset & $H$ & " + " & ".join(t for _, t in models) + r" \\", r"\midrule"]
     for ds in DATASETS:
@@ -257,7 +257,7 @@ def paired_table(R, ref, variants, caption, label, datasets=None):
                 c[tag] = c[alias]
     dss = sorted({k[0] for k in cells if ref in cells[k] and any(t in cells[k] for t, _ in variants)},
                  key=DATASETS.index)
-    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l " + "c " * (len(dss) + 2) + "}", r"\toprule",
              "Variant & " + " & ".join(dss) + r" & All & $p$ \\", r"\midrule"]
     for tag, name in variants:
@@ -285,7 +285,7 @@ def paired_table(R, ref, variants, caption, label, datasets=None):
 
 
 def efficiency_table(R, models, ds, H, caption, label):
-    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l c c c c}", r"\toprule",
              r"Model & Params (M) & Train (s/epoch) & Inference (ms/batch) & Peak memory (MiB) \\", r"\midrule"]
     for tag, name in models:
@@ -305,7 +305,7 @@ def efficiency_table(R, models, ds, H, caption, label):
 def bench_table(path, caption, label):
     """Efficiency measured by benchmark_efficiency.py on one idle GPU (ETTm1, H=96, batch 32)."""
     b = json.load(open(path))
-    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + f" GPU: {b['device']}." + "}",
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{" + caption + f" GPU: {b['device']}." + "}",
              r"\label{" + label + "}", r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l c c c c}", r"\toprule",
              r"Model & Params (M) & Train step (ms) & Inference (ms/batch) & Peak memory (MiB) \\", r"\midrule"]
     for r in b["results"]:
@@ -322,7 +322,7 @@ def fewshot_table(R, caption, label):
     """Test MSE averaged over datasets, horizons and seeds for each training fraction and anchor condition."""
     conds = [("gpt2", "GPT-2 anchor"), ("learned", "learned vectors"), ("none", "no anchor")]
     pcts = sorted({int(t[2:].split("_")[0]) for (_, t, _) in R if t.startswith("fs") and t[2:].split("_")[0].isdigit()})
-    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\begin{tabular}{l " + "c " * len(pcts) + "}", r"\toprule",
              "Anchor & " + " & ".join(f"{q}\\%" for q in pcts) + r" \\", r"\midrule"]
     for c, name in conds:
@@ -355,7 +355,7 @@ def transfer_table(R, caption, label):
             for r in runs:
                 for tgt, m in (r.get("transfer") or {}).items():
                     pairs[(ds, tgt)][t].append(m["mse"])
-    lines = [r"\begin{table}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\begin{tabular}{l ccc}", r"\toprule", r"Source $\rightarrow$ target & " + " & ".join(n for _, n in conds) + r" \\", r"\midrule"]
     for (src, tgt), d in sorted(pairs.items()):
         vals = [np.mean(d[t]) if d[t] else None for t, _ in conds]

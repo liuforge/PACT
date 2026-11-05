@@ -39,7 +39,7 @@ def main():
     pact = selected(a.root, "pact__")
     rl = selected(a.root, "rlinear__")
     dl = selected(a.root, "dlinear__")
-    lines = [r"\begin{table}[t]", r"\centering", r"\caption{Hyper-parameters selected on the validation set (seed 2024). "
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{Hyper-parameters selected on the validation set (seed 2024). "
              r"PACT: learning rate / width $D$ / BDCA feed-forward layer (1: on); RLinear and DLinear: learning rate. "
              r"All other settings are given in Section~\ref{sec:setup} and the official scripts of the baselines.}",
              r"\label{tab:hparams}", r"\resizebox{\linewidth}{!}{%", r"\begin{tabular}{l l c c c}", r"\toprule",
@@ -59,8 +59,9 @@ def main():
             lines += rows + [r"\midrule"]
     lines[-1] = r"\bottomrule"
     lines += [r"\end{tabular}}", r"\end{table}", ""]
-    # baseline architecture settings (from the official scripts)
-    lines += [r"\begin{table}[t]", r"\centering", r"\caption{Architecture settings of the trained baselines, taken from "
+    open(a.out, "w").write("\n".join(lines) + "\n")
+    # baseline architecture settings (from the official scripts): supplementary material
+    lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{Architecture settings of the trained baselines, taken from "
               r"their official scripts (TimeCMA: learning rate / channels / encoder layers / decoder layers / dropout / "
               r"batch; iTransformer: $d_{model}$ / $d_{ff}$ / layers; TimesNet: $d_{model}$ / $d_{ff}$). PatchTST uses "
               r"the per-horizon settings of the Time-Series-Library scripts on ETT and 3 layers, 16 heads, $d_{model}=128$ "
@@ -81,7 +82,7 @@ def main():
         lines += rows + [r"\midrule"]
     lines[-1] = r"\bottomrule"
     lines += [r"\end{tabular}}", r"\end{table}"]
-    open(a.out, "w").write("\n".join(lines) + "\n")
+    open(a.out.replace(".tex", "_baselines.tex"), "w").write("\n".join(lines) + "\n")
     print(f"written {a.out}: {len(pact)} PACT cells")
 
 
