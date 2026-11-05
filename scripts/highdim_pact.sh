@@ -9,6 +9,7 @@ set -u
 D=$1 PER=${2:-3}
 source /mnt/proj/pact-code/env.sh
 cd /mnt/proj/pact-code
+mkdir -p chosen jobs logs
 X="--root_path data --num_workers 0"
 E="--amp 1 --epochs 20 --patience 5"
 log() { echo "[$(date '+%F %T')] $*"; }
