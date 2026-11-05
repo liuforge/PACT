@@ -4,7 +4,7 @@
 #   scripts/relay.sh SRC DST jobs/<name>.txt <per_gpu> <gpus>
 SRC=$1 DST=$2 JOBS=$3 PER=${4:-3} GPUS=${5:-0}
 S="-o BatchMode=yes -o RemoteCommand=none -o RequestTTY=no -T"
-PY=/mnt/proj/qwen38-inference/env-vllm032/bin/python
+PY=${PY:-/mnt/proj/qwen38-inference/env-vllm032/bin/python}  # override for hosts with another env
 stem=$(basename $JOBS .txt)_rev
 if [ -z "$SYNC_ONLY" ]; then
 ssh ${=S} $DST "cat /mnt/proj/pact-code/$JOBS" < /dev/null 2>/dev/null | tail -r > /tmp/$stem.txt
