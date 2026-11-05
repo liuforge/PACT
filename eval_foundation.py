@@ -104,7 +104,9 @@ class TimeMoE:
         B, Lc, N = ctx.shape
         x = torch.as_tensor(ctx, device=self.device).transpose(1, 2).reshape(B * N, Lc)
         mu, sd = x.mean(-1, keepdim=True), x.std(-1, keepdim=True) + 1e-5
-        out = self._generate((x - mu) / sd, H)
+        z = (x - mu) / sd
+        chunk = 256  # series per forward pass (Traffic has 862 per window)
+        out = torch.cat([self._generate(z[i:i + chunk], H) for i in range(0, len(z), chunk)])
         return (out * sd + mu).reshape(B, N, H).transpose(1, 2).float().cpu().numpy()
 
 
