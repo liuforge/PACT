@@ -21,7 +21,10 @@ DATASETS = {
     "ILI": dict(L=36, H=[24, 36, 48, 60], bs=16, extra="--patch_len 6 --stride 3 --kernel_size 7"),
 }
 # added in the revision for a second high-dimensional dataset (862 variates); only via --datasets Traffic
-EXTRA_DATASETS = {"Traffic": dict(L=96, H=[96, 192, 336, 720], bs=16)}
+EXTRA_DATASETS = {"Traffic": dict(L=96, H=[96, 192, 336, 720], bs=16),
+                  # further high-dimensional benchmarks (137 and 170 variates); PEMS horizons follow iTransformer
+                  "Solar": dict(L=96, H=[96, 192, 336, 720], bs=32),
+                  "PEMS08": dict(L=96, H=[12, 24, 48, 96], bs=32)}
 # Time-MMD domains with aligned text (tools/prep_mmd.py); univariate target, 7:1:2 split
 MMD_MONTH = dict(L=8, H=[6, 8, 10, 12], bs=16, extra="--patch_len 4 --stride 2 --kernel_size 5")
 MMD_WEEK = dict(L=36, H=[12, 24, 36, 48], bs=16, extra="--patch_len 6 --stride 3 --kernel_size 7")
@@ -49,6 +52,8 @@ TIMECMA_OFFICIAL = {
     "ILI": {24: (5e-5, 16, 1, 1, 0.1, 16), 36: (1e-4, 16, 1, 1, 0.1, 16), 48: (2.5e-3, 16, 1, 1, 0.3, 16), 60: (1e-4, 32, 1, 1, 0.1, 16)},
 }
 TIMECMA_OFFICIAL["Traffic"] = TIMECMA_OFFICIAL["ECL"]  # no official Traffic script: the ECL settings are used
+TIMECMA_OFFICIAL["Solar"] = TIMECMA_OFFICIAL["ECL"]
+TIMECMA_OFFICIAL["PEMS08"] = {h: TIMECMA_OFFICIAL["ECL"][96] for h in (12, 24, 48, 96)}
 
 # Time-Series-Library baselines: architecture settings from TSLib scripts (ETT) or the models' own
 # repositories; training follows TSLib (10 epochs, patience 3, lr halved every epoch).
@@ -60,9 +65,11 @@ _PT_ETT = {  # PatchTST, TSLib ETT scripts: H -> (e_layers, n_heads)
     "ETTm2": {96: (3, 16), 192: (3, 2), 336: (1, 4), 720: (3, 4)},
 }
 _TN = {"ETTh1": (16, 32), "ETTh2": (32, 32), "ETTm1": (64, 64), "ETTm2": (32, 32),  # TimesNet (d_model, d_ff)
-       "ECL": (256, 512), "Weather": (32, 32), "ILI": (768, 768), "Traffic": (512, 512)}
+       "ECL": (256, 512), "Weather": (32, 32), "ILI": (768, 768), "Traffic": (512, 512),
+       "Solar": (256, 512), "PEMS08": (256, 512)}  # no TSLib scripts for Solar/PEMS08: the ECL settings
 _IT = {"ETTh1": (256, 256, 2), "ETTh2": (128, 128, 2), "ETTm1": (128, 128, 2), "ETTm2": (128, 128, 2),  # iTransformer
-       "ECL": (512, 512, 3), "Weather": (512, 512, 3), "ILI": (128, 128, 2), "Traffic": (512, 512, 4)}
+       "ECL": (512, 512, 3), "Weather": (512, 512, 3), "ILI": (128, 128, 2), "Traffic": (512, 512, 4),
+       "Solar": (512, 512, 2), "PEMS08": (512, 512, 2)}  # iTransformer scripts for Solar and PEMS08
 
 
 def tslib_flags(model, ds, H):
@@ -78,7 +85,7 @@ def tslib_flags(model, ds, H):
     elif model == "itransformer":
         dm, dff, e = _IT[ds]
         arch = f"--e_layers {e} --n_heads 8 --d_model {dm} --d_ff {dff}"
-        lr = {"ECL": "5e-4", "Traffic": "1e-3"}.get(ds, lr)
+        lr = {"ECL": "5e-4", "Traffic": "1e-3", "Solar": "5e-4", "PEMS08": "1e-3"}.get(ds, lr)
     elif model == "timesnet":
         dm, dff = _TN[ds]
         arch = f"--e_layers 2 --d_model {dm} --d_ff {dff} --top_k 5 --num_kernels 6"

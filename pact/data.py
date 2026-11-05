@@ -27,6 +27,9 @@ DATASETS = {
     "Weather": ("weather/weather.csv", "custom", "every 10 minutes"),
     "ILI": ("illness/national_illness.csv", "custom", "every week"),
     "Traffic": ("traffic/traffic.csv", "custom", "every hour"),
+    # added in the revision (high-dimensional benchmarks of iTransformer); converted by tools/prep_highdim.py
+    "Solar": ("solar/solar_AL.csv", "custom", "every 10 minutes"),
+    "PEMS08": ("PEMS/PEMS08.csv", "pems", "every 5 minutes"),
 }
 
 
@@ -46,6 +49,10 @@ def split_borders(kind, n_rows, seq_len):
         n_train, n_val, n_test = 12 * unit, 4 * unit, 4 * unit
         border1s = [0, n_train - seq_len, n_train + n_val - seq_len]
         border2s = [n_train, n_train + n_val, n_train + n_val + n_test]
+    elif kind == "pems":  # iTransformer's Dataset_PEMS: 6:2:2, validation and test windows start inside their split
+        n_train, n_val_end = int(n_rows * 0.6), int(n_rows * 0.8)
+        border1s = [0, n_train, n_val_end]
+        border2s = [n_train, n_val_end, n_rows]
     else:
         n_train = int(n_rows * 0.7)
         n_test = int(n_rows * 0.2)

@@ -14,6 +14,7 @@ log=logs/idle_guard.log
 busy() { pgrep -f "python[^ ]* (train\.py|eval_foundation\.py|build_(ts_)?embeddings\.py)" > /dev/null; }
 gpu_ok() { nvidia-smi -L > /dev/null 2>&1; }  # e.g. a pod that lost GPU access: wait instead of failing the queue
 echo "$(date '+%F %T') guard started: $*" >> $log
+sleep ${GUARD_DELAY:-600}  # let a queue started together with the guard spawn its jobs before the first check
 for jf in "$@"; do
   while busy || ! gpu_ok; do sleep 1800; done
   [ -s "$jf" ] || { echo "$(date '+%F %T') skip missing $jf" >> $log; continue; }
