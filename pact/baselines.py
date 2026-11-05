@@ -91,7 +91,7 @@ class TSLib(nn.Module):
                             d_model=cfg.d_model, n_heads=cfg.n_heads, e_layers=cfg.e_layers, d_layers=cfg.d_layers,
                             d_ff=cfg.d_ff, dropout=cfg.dropout, factor=cfg.factor, embed="timeF", freq="h",
                             activation="gelu", top_k=cfg.top_k, num_kernels=cfg.num_kernels, moving_avg=cfg.moving_avg,
-                            num_class=1, output_attention=False, use_norm=1)
+                            num_class=1, output_attention=False, use_norm=getattr(cfg, "revin", 1))
         self.net = mod.Model(c)
 
     def forward(self, x, emb=None, x_mark=None):

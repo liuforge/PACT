@@ -85,7 +85,10 @@ def tslib_flags(model, ds, H):
     elif model == "itransformer":
         dm, dff, e = _IT[ds]
         arch = f"--e_layers {e} --n_heads 8 --d_model {dm} --d_ff {dff}"
-        lr = {"ECL": "5e-4", "Traffic": "1e-3", "Solar": "5e-4", "PEMS08": "1e-3"}.get(ds, lr)
+        lr = {"ECL": "5e-4", "Traffic": "1e-3", "Solar": "5e-4"}.get(ds, lr)
+        if ds == "PEMS08" and H >= 48:  # official script: 4 layers, lr 1e-3, batch 16, no series normalisation
+            arch = "--e_layers 4 --n_heads 8 --d_model 512 --d_ff 512 --revin 0 --batch_size 16"
+            lr = "1e-3"
     elif model == "timesnet":
         dm, dff = _TN[ds]
         arch = f"--e_layers 2 --d_model {dm} --d_ff {dff} --top_k 5 --num_kernels 6"

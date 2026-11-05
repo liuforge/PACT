@@ -20,8 +20,8 @@ import numpy as np  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_tables import ALIASES, load  # noqa: E402
 
-ORDER = [("ETTh1", 7), ("ETTh2", 7), ("ETTm1", 7), ("ETTm2", 7), ("ILI", 7), ("Weather", 21), ("ECL", 321),
-         ("Traffic", 862)]
+ORDER = [("ETTh1", 7), ("ETTh2", 7), ("ETTm1", 7), ("ETTm2", 7), ("ILI", 7), ("Weather", 21), ("Solar", 137),
+         ("PEMS08", 170), ("ECL", 321), ("Traffic", 862)]
 from palette import BAND, GRID, INK, MUTED, SERIES as SLOTS, edge, apply_style  # noqa: E402
 MARKERS = ["o", "s", "D", "^"]
 
@@ -64,7 +64,7 @@ def panel(ax, c, series, title, xlabel, floor=None, first=False):
     ax.axvline(0, color=MUTED, lw=0.7, zorder=1)
     for yi in y[:-1]:
         ax.axhline(yi - 0.5, color=GRID, lw=0.5, zorder=0)
-    ax.axhspan(-0.5, 2.5, color=BAND, zorder=0)  # 21 and more variates
+    ax.axhspan(-0.5, sum(n >= 21 for _, n in ORDER) - 0.5, color=BAND, zorder=0)  # 21 and more variates
     ax.set_yticks(y)
     if first:
         ax.set_yticklabels([f"{d} ({n})" for d, n in ORDER], fontsize=6.5, color=INK)

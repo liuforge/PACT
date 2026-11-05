@@ -13,11 +13,11 @@ import os
 import numpy as np
 from scipy.stats import wilcoxon
 
-DATASETS = ["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "ECL", "Traffic", "ILI"]
+DATASETS = ["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "Solar", "PEMS08", "ECL", "Traffic", "ILI"]
 # runs with identical configurations under two tags: the full ablation model and the GPT-2 control are the
 # selected main-table configuration, so missing (dataset, H, seed) cells fall back to the main-table run
 ALIASES = {"abl_full": "pact", "llm_gpt2": "pact"}
-HORIZONS = {"ILI": [24, 36, 48, 60]}
+HORIZONS = {"ILI": [24, 36, 48, 60], "PEMS08": [12, 24, 48, 96]}
 SHADE_NOTE = r" Shading: \swatch{upc!30}{higher} / \swatch{downc!30}{lower} error than the reference; bold: $p<0.05$."
 MAIN_MODELS = [  # (tag after selection, column title)
     ("pact", "PACT"), ("timecma", "TimeCMA"), ("patchtst", "PatchTST"), ("itransformer", "iTrans."),
