@@ -76,7 +76,7 @@ def fmt_rank(vals, digits=3):
     return out
 
 
-def main_table(R, models, caption, label):
+def main_table(R, models, caption, label, datasets=None):
     cols = "l l " + " ".join(["cc"] * len(models))
     lines = [r"\begin{table*}[t]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\resizebox{\textwidth}{!}{%", r"\begin{tabular}{" + cols + "}", r"\toprule",
@@ -85,7 +85,7 @@ def main_table(R, models, caption, label):
              "Dataset & $H$ & " + " & ".join(["MSE & MAE"] * len(models)) + r" \\", r"\midrule"]
     wins = collections.Counter()
     gaps = gap_to_best(R, models)
-    for ds in DATASETS:
+    for ds in datasets or DATASETS:
         rows = []
         for H in horizons(ds) + ["Avg"]:
             mse, mae = [], []
@@ -408,7 +408,8 @@ def main():
                    ("zs_timesfm-3.0-pytorch_ctx512", "TimesFM-3"), ("zs_Toto-2.0-313m_ctx512", "Toto-2"),
                    ("zs_TimeMoE-200M_ctx512", "Time-MoE")]
     w("long.tex", main_table(R, long_models, "Long look-back: trained models with $L=512$ and foundation models with a "
-      "512-step context, on the same test targets as Table~\\ref{tab:main_results}.", "tab:long"))
+      "512-step context, on the same test targets as Table~\\ref{tab:main_results}.", "tab:long",
+      datasets=["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather"]))
     w("anchor_source.tex", paired_table(R, "llm_none", [
         ("llm_gpt2", "GPT-2 (124M, 2019), standardised prompt (PACT)"),
         ("llm_qwen3", "Qwen3-0.6B-Base (2025), same prompt"),
