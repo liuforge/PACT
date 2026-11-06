@@ -96,7 +96,7 @@ def fmt_rank(vals, digits=3):
 def main_table(R, models, caption, label, datasets=None):
     cols = "c c " + r">{\columncolor{oursbg}}c>{\columncolor{oursbg}}c " + " ".join(["cc"] * (len(models) - 1))
     lines = [r"\begin{table*}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
-             r"\setlength{\tabcolsep}{3.2pt}", r"\begin{adjustbox}{max width=\textwidth}",
+             r"\setlength{\tabcolsep}{3.2pt}", r"\begin{adjustbox}{max width=\textwidth, max totalheight=0.86\textheight}",
              r"\begin{tabular}{" + cols + "}", r"\toprule",
              "& & " + " & ".join(r"\multicolumn{2}{c}{" + t + "}" for _, t in models) + r" \\",
              " ".join(rf"\cmidrule(lr){{{3 + 2 * i}-{4 + 2 * i}}}" for i in range(len(models))),
