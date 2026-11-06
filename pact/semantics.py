@@ -12,6 +12,8 @@ DOMAIN = {
     "ILI": "This is weekly influenza-like illness surveillance data from the US Centers for Disease Control and Prevention.",
     "ECL": "This is hourly electricity consumption of clients of a Portuguese utility.",
     "Traffic": "This is hourly road occupancy measured by sensors on San Francisco Bay Area freeways.",
+    "Solar": "This is solar power produced by photovoltaic plants in Alabama, recorded every 10 minutes.",
+    "PEMS08": "This is traffic flow measured every 5 minutes by detectors on freeways in San Bernardino, California.",
 }
 
 _ETT = {
@@ -74,6 +76,10 @@ def describe(dataset, column, index):
         return f"the electricity consumption of client {index + 1}"
     if dataset == "Traffic":
         return f"the occupancy rate of road sensor {index + 1}"
+    if dataset == "Solar":
+        return f"the power output of photovoltaic plant {index + 1}"
+    if dataset == "PEMS08":
+        return f"the traffic flow at detector {index + 1}"
     return f"variable {column}"
 
 

@@ -306,7 +306,7 @@ def paired_table(R, ref, variants, caption, label, datasets=None, flagged=None):
         allx, ally = [], []
         for ds in dss:
             ks = [k for k in cells if k[0] == ds and ref in cells[k] and tag in cells[k]]
-            if not ks:
+            if len(ks) < 6:  # not run, or still running (fewer than two horizons x three seeds)
                 row.append("--")
                 continue
             x = np.array([cells[k][ref] for k in ks])

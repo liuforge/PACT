@@ -131,11 +131,14 @@ def main():
     p.add_argument("--overwrite", type=int, default=0)
     p.add_argument("--tfm_znorm", type=int, default=0, help="TimesFM-3: use_znorm=True in predict_batch")
     p.add_argument("--tfm_univariate", type=int, default=0, help="TimesFM-3: forecast every variate separately")
+    p.add_argument("--clip", type=float, default=0.0,
+                   help="if > 0: clip every forecast to [min - k*r, max + k*r] of its own context (r = max - min); "
+                        "a guard against forecasts that explode on near-constant contexts")
     a = p.parse_args()
     TimesFM3.znorm = bool(a.tfm_znorm)
     TimesFM3.univariate = bool(a.tfm_univariate)
     tag = a.tag or (f"zs_{os.path.basename(a.ckpt.rstrip('/'))}" + ("-znorm" if a.tfm_znorm else "")
-                    + ("-uni" if a.tfm_univariate else ""))
+                    + ("-uni" if a.tfm_univariate else "") + (f"-clip{a.clip:g}" if a.clip > 0 else ""))
     device = torch.device(a.device if (a.device != "cuda" or torch.cuda.is_available()) else "cpu")
     L = BASE_L.get(a.dataset, 96)
     horizons = [int(h) for h in a.pred_lens.split(",")] if a.pred_lens else HORIZONS.get(a.dataset, [96, 192, 336, 720])
@@ -161,7 +164,7 @@ def main():
         targets = targets[::a.window_stride]
         if targets[0] - a.context < 0:
             raise ValueError("context longer than the available history")
-        se, ae, n, times = 0.0, 0.0, 0, []
+        se, ae, n, times, clipped = 0.0, 0.0, 0, [], 0
         for i in range(0, len(targets), a.batch_size):
             t = targets[i:i + a.batch_size]
             ctx = np.stack([data[s - a.context:s] for s in t]).astype(np.float32)
@@ -170,6 +173,11 @@ def main():
                 torch.cuda.synchronize()
             t0 = time.perf_counter()
             pred = model(ctx, H)
+            if a.clip > 0:  # ctx [B, Lc, N] -> per-series bounds
+                lo, hi = ctx.min(axis=1, keepdims=True), ctx.max(axis=1, keepdims=True)
+                r = hi - lo
+                clipped += int(((pred < lo - a.clip * r) | (pred > hi + a.clip * r)).sum())
+                pred = np.clip(pred, lo - a.clip * r, hi + a.clip * r)
             if device.type == "cuda":
                 torch.cuda.synchronize()
             times.append(time.perf_counter() - t0)
@@ -177,6 +185,7 @@ def main():
             ae += float(np.abs(pred - y).sum())
             n += y.size
         test = dict(mse=se / n, mae=ae / n, n_windows=int(len(targets)), window_stride=a.window_stride,
+                    clipped_frac=clipped / n,
                     infer_s_per_batch=float(np.mean(times[1:] if len(times) > 1 else times)))
         peak = torch.cuda.max_memory_allocated(device) / 2 ** 20 if device.type == "cuda" else None
         os.makedirs(out_dir, exist_ok=True)
