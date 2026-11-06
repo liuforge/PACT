@@ -16,6 +16,9 @@ from scipy.stats import wilcoxon
 DATASETS = ["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "Solar", "PEMS08", "ECL", "Traffic", "ILI"]
 # runs with identical configurations under two tags: the full ablation model and the GPT-2 control are the
 # selected main-table configuration, so missing (dataset, H, seed) cells fall back to the main-table run
+# datasets whose series are very likely in Sundial's pre-training corpus (TimeBench includes the Chronos corpus,
+# with the NREL solar data of 2006, and LOTSA, with PEMS08 and Traffic); Sundial itself excludes ETT, ECL and Weather
+SUNDIAL_SEEN = ("Solar", "PEMS08", "Traffic")
 ALIASES = {"abl_full": "pact", "llm_gpt2": "pact"}
 HORIZONS = {"ILI": [24, 36, 48, 60], "PEMS08": [12, 24, 48, 96]}
 SHADE_NOTE = r" Shading: \swatch{upc!30}{higher} / \swatch{downc!30}{lower} error than the reference; bold: $p<0.05$."
@@ -276,8 +279,11 @@ def full_table(R, models, caption, label):
     return "\n".join(lines)
 
 
-def paired_table(R, ref, variants, caption, label, datasets=None):
-    """Relative test-MSE change of each variant vs. ref over (dataset, H, seed) cells, with Wilcoxon p."""
+def paired_table(R, ref, variants, caption, label, datasets=None, flagged=None):
+    """Relative test-MSE change of each variant vs. ref over (dataset, H, seed) cells, with Wilcoxon p.
+    flagged: {tag: datasets} cells shown with a dagger and left out of the All column and p (e.g. possible
+    overlap between the test data and the pre-training corpus of the anchor model)."""
+    flagged = flagged or {}
     cells = collections.defaultdict(dict)
     for (ds, tag, H), runs in R.items():
         if datasets and ds not in datasets:
@@ -305,6 +311,9 @@ def paired_table(R, ref, variants, caption, label, datasets=None):
                 continue
             x = np.array([cells[k][ref] for k in ks])
             y = np.array([cells[k][tag] for k in ks])
+            if ds in flagged.get(tag, ()):
+                row.append(pct_cell(np.mean((y - x) / x) * 100) + r"$^\dagger$")
+                continue
             allx += list(x)
             ally += list(y)
             row.append(pct_cell(np.mean((y - x) / x) * 100))
@@ -454,7 +463,9 @@ def main():
         ("llm_shuffled", "GPT-2, mismatched window")],
         "Which source should the anchor come from? Relative change of test MSE with respect to the same model "
         "without anchor (negative: the anchor helps), averaged over horizons and seeds; $p$: Wilcoxon "
-        "signed-rank test over all cells.", "tab:anchor_source"))
+        "signed-rank test over all cells. $^\\dagger$: the dataset is very likely part of the pre-training corpus of "
+        "Sundial (Section~\\ref{sec:anchor_source}); these cells are excluded from All and $p$.", "tab:anchor_source",
+        flagged={"llm_sundial": SUNDIAL_SEEN}))
     w("prompt_content.tex", paired_table(R, "llm_gpt2", [
         ("llm_gpt2raw", "raw values, integers (TimeCMA template)"), ("llm_raw1f", "raw values, one decimal"),
         ("llm_gz", "training z-score (level kept, units removed)"),

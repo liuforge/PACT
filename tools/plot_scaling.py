@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_tables import ALIASES, load  # noqa: E402
+from make_tables import ALIASES, SUNDIAL_SEEN, load  # noqa: E402
 
 ORDER = [("ETTh1", 7), ("ETTh2", 7), ("ETTm1", 7), ("ETTm2", 7), ("ILI", 7), ("Weather", 21), ("Solar", 137),
          ("PEMS08", 170), ("ECL", 321), ("Traffic", 862)]
@@ -49,12 +49,19 @@ def panel(ax, c, series, title, xlabel, floor=None, first=False):
     step = 0.62 / max(len(series) - 1, 1)
     have = set()
     nclip = {}  # clipped labels per row, shifted right so that they do not overlap
-    for i, (label, num, den) in enumerate(series):
+    for i, (label, num, den, *opt) in enumerate(series):
+        hollow = opt[0] if opt else ()  # datasets drawn as open markers (results to be read with caution)
         xs = [rel(c, ds, num, den) for ds, _ in ORDER]
         have |= {j for j, v in enumerate(xs) if v is not None}
         pts = [(v, yi + 0.31 - step * i) for yi, v in zip(y, xs) if v is not None]
-        ax.scatter([v if floor is None else max(v, floor) for v, _ in pts], [py for _, py in pts], s=22,
+        solid = [ds not in hollow for (ds, _), v in zip(ORDER, xs) if v is not None]
+        px = [v if floor is None else max(v, floor) for v, _ in pts]
+        py_ = [py for _, py in pts]
+        ax.scatter([x for x, f in zip(px, solid) if f], [q for q, f in zip(py_, solid) if f], s=22,
                    marker=MARKERS[i], color=SLOTS[i], edgecolor=edge(SLOTS[i]), linewidth=0.6, zorder=3, label=label)
+        if not all(solid):
+            ax.scatter([x for x, f in zip(px, solid) if not f], [q for q, f in zip(py_, solid) if not f], s=22,
+                       marker=MARKERS[i], facecolor="white", edgecolor=SLOTS[i], linewidth=0.9, zorder=3)
         for (v, py), yi in zip(pts, [yi for yi, v in zip(y, xs) if v is not None]):  # clipped points carry their value
             if floor is not None and v < floor:
                 k = nclip.get(yi, 0)
@@ -102,7 +109,7 @@ def main():
                        ("w/o PDPL", "abl_no_pdpl", "abl_full")],
           "(b) Component removed or replaced", "rel. MSE (%), > 0: component helps")
     panel(axes[2], c, [("GPT-2", "llm_gpt2", "llm_none"), ("Qwen3-0.6B", "llm_qwen3", "llm_none"),
-                       ("Sundial", "llm_sundial", "llm_none"), ("learned vectors", "llm_learned", "llm_none")],
+                       ("Sundial", "llm_sundial", "llm_none", SUNDIAL_SEEN), ("learned vectors", "llm_learned", "llm_none")],
           "(c) Anchor source vs. no anchor", "rel. MSE (%), < 0: anchor helps")
     axes[0].set_xlim(-47, axes[0].get_xlim()[1])
     fig.tight_layout(w_pad=0.6)
