@@ -74,6 +74,8 @@ def get_args(argv=None):
     a("--n_prototypes", type=int, default=16)
     a("--bdca_iters", type=int, default=1, help="-1: no BDCA, 0: single cross-attention, I>=1: I bi-directional rounds")
     a("--bdca_ffn", type=int, default=1)
+    a("--adapter_mix", default="variate", choices=["variate", "self"], help="self: control without mixing across variates")
+    a("--inject", default="bdca", choices=["bdca", "add"], help="add: control that adds the prompt to the features")
     a("--bdca_xvar", type=int, default=0, help="BDCA backward step also calibrates prompts across variates")
     a("--pdpl_mode", default="dot", choices=["dot", "cos", "kv"],
       help="cos: cosine retrieval with learnable temperature; kv: separate key/value prototypes")

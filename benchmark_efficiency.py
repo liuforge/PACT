@@ -1,4 +1,4 @@
-"""Measure the cost of every model on the same idle GPU (ETTm1, H=96, batch 32).
+"""Measure the cost of every model on the same idle GPU (default ETTm1, H=96, batch 32; --dataset/--batch_size for the high-dimensional data).
 
 Trained models: trainable parameters, time per training step (after warm-up) and the implied time per epoch,
 inference latency per batch and peak GPU memory during training. Foundation models: parameters, inference
@@ -26,29 +26,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "too
 from make_jobs import TIMECMA_OFFICIAL, tslib_flags  # noqa: E402
 
 
-def configs(pact_hp):
+def configs(pact_hp, ds="ETTm1"):
     lr, d, ffn = pact_hp
-    lr_, ch, el, dl, do, bs = TIMECMA_OFFICIAL["ETTm1"][96]
+    lr_, ch, el, dl, do, bs = TIMECMA_OFFICIAL[ds][96]
     return {
         "PACT": f"--model pact --token_mode patch --dropout 0.1 --llm stored --emb_tag gpt2-norm --lr {lr} --d_model {d} --d_ff {2 * d} --bdca_ffn {ffn}",
         "PACT (no anchor)": f"--model pact --token_mode patch --dropout 0.1 --llm none --lr {lr} --d_model {d} --d_ff {2 * d} --bdca_ffn {ffn}",
         "TimeCMA": f"--model timecma --emb_tag gpt2-norm --d_model {ch} --e_layers {el} --d_layers {dl} --dropout {do}",
-        "PatchTST": tslib_flags("patchtst", "ETTm1", 96),
-        "iTransformer": tslib_flags("itransformer", "ETTm1", 96),
-        "TimesNet": tslib_flags("timesnet", "ETTm1", 96),
-        "DLinear": tslib_flags("dlinear", "ETTm1", 96),
-        "RLinear": tslib_flags("rlinear", "ETTm1", 96),
+        "PatchTST": tslib_flags("patchtst", ds, 96),
+        "iTransformer": tslib_flags("itransformer", ds, 96),
+        "TimesNet": tslib_flags("timesnet", ds, 96),
+        "DLinear": tslib_flags("dlinear", ds, 96),
+        "RLinear": tslib_flags("rlinear", ds, 96),
     }
 
 
 def bench_trained(name, flags, a, device):
-    args = train.get_args(shlex.split(f"--dataset ETTm1 --root_path {a.root_path} --seq_len 96 --pred_len 96 "
-                                      f"--batch_size 32 --emb_root {a.emb_root} {flags}"))
-    series = load_series("ETTm1", args.root_path, 96)
+    args = train.get_args(shlex.split(f"--dataset {a.dataset} --root_path {a.root_path} --seq_len 96 --pred_len 96 "
+                                      f"--batch_size {a.batch_size} --emb_root {a.emb_root} {flags}"))
+    series = load_series(a.dataset, args.root_path, 96)
     args.num_vars = series["raw"].shape[1]
     store = None
     if args.model in train.NEEDS_EMB and args.llm == "stored":
-        store = EmbeddingStore(os.path.join(args.emb_root, "ETTm1", f"{args.emb_tag}_L96.npy"), in_memory=True)
+        store = EmbeddingStore(os.path.join(args.emb_root, a.dataset, f"{args.emb_tag}_L96.npy"), in_memory=True)
         args.d_llm = store.d_llm
     else:
         args.d_llm = 768
@@ -60,7 +60,7 @@ def bench_trained(name, flags, a, device):
     model = train.MODELS[args.model](args).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    loader = torch.utils.data.DataLoader(tr, batch_size=32, shuffle=True, drop_last=True)
+    loader = torch.utils.data.DataLoader(tr, batch_size=a.batch_size, shuffle=True, drop_last=True)
     it = iter(loader)
     torch.cuda.reset_peak_memory_stats(device)
 
@@ -90,7 +90,7 @@ def bench_trained(name, flags, a, device):
     per_step = (time.perf_counter() - t0) / a.steps
     peak = torch.cuda.max_memory_allocated(device) / 2 ** 20
     model.eval()
-    tl = torch.utils.data.DataLoader(te, batch_size=32, shuffle=False, drop_last=True)
+    tl = torch.utils.data.DataLoader(te, batch_size=a.batch_size, shuffle=False, drop_last=True)
     lat = []
     with torch.no_grad():
         for i, (x, _, _, emb, xm) in enumerate(tl):
@@ -104,7 +104,7 @@ def bench_trained(name, flags, a, device):
             torch.cuda.synchronize()
             if i >= 5:
                 lat.append(time.perf_counter() - t0)
-    return dict(model=name, params=n_params, s_per_step=per_step, s_per_epoch=per_step * len(tr) / 32,
+    return dict(model=name, params=n_params, s_per_step=per_step, s_per_epoch=per_step * len(tr) / a.batch_size,
                 infer_ms_per_batch=float(np.mean(lat) * 1000), peak_mem_mib=peak)
 
 
@@ -116,12 +116,12 @@ def bench_fm(name, cls, ckpt, ctx, a, device, univariate=False):
     m = getattr(ef, cls)(ckpt, device)
     net = getattr(m.model, "model", m.model)
     n_params = sum(p.numel() for p in net.parameters()) if isinstance(net, torch.nn.Module) else None
-    series = load_series("ETTm1", a.root_path, 96)
+    series = load_series(a.dataset, a.root_path, 96)
     data = series["scaled"]
-    starts = np.arange(series["border1s"][2] + 96, series["border1s"][2] + 96 + 32 * (a.infer_batches + 5), 1)
+    starts = np.arange(series["border1s"][2] + 96, series["border1s"][2] + 96 + a.batch_size * (a.infer_batches + 5), 1)
     lat = []
     for i in range(a.infer_batches + 5):
-        t = starts[i * 32:(i + 1) * 32]
+        t = starts[i * a.batch_size:(i + 1) * a.batch_size]
         ctxa = np.stack([data[s - ctx:s] for s in t]).astype(np.float32)
         torch.cuda.synchronize()
         t0 = time.perf_counter()
@@ -136,6 +136,8 @@ def bench_fm(name, cls, ckpt, ctx, a, device, univariate=False):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--root_path", default="data")
+    p.add_argument("--dataset", default="ETTm1")
+    p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--emb_root", default="embeddings")
     p.add_argument("--pact_hp", default="1e-4,128,0", help="lr,d_model,ffn chosen for ETTm1-96")
     p.add_argument("--warmup", type=int, default=20)
@@ -148,9 +150,12 @@ def main():
     torch.manual_seed(0)
     lr, d, f = a.pact_hp.split(",")
     out = []
-    for name, flags in configs((lr, int(d), int(f))).items():
-        out.append(bench_trained(name, flags, a, device))
-        print(json.dumps(out[-1]), flush=True)
+    for name, flags in configs((lr, int(d), int(f)), a.dataset).items():
+        try:
+            out.append(bench_trained(name, flags, a, device))
+            print(json.dumps(out[-1]), flush=True)
+        except Exception as e:  # report and continue
+            print(f"{name} failed: {e}", flush=True)
         torch.cuda.empty_cache()
     if a.fm:
         for name, cls, ckpt in (("TimesFM-3", "TimesFM3", "hf_models/timesfm-3.0-pytorch"),

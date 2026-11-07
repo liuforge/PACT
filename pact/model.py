@@ -127,15 +127,23 @@ class VariateEncoder(nn.Module):
 class PromptAdapter(nn.Module):
     """Frozen-LLM embedding [B, N, d_llm] -> anchor [B, N, D] through a bottleneck Transformer."""
 
-    def __init__(self, d_llm, d_bottleneck, d_model, n_heads, dropout):
+    def __init__(self, d_llm, d_bottleneck, d_model, n_heads, dropout, mix="variate"):
         super().__init__()
+        # mix="self" (control): the same layer, but every variate token attends only to itself, so the anchor of a
+        # variate carries no information about the other variates
+        self.mix_mode = mix
         self.inp_norm = nn.LayerNorm(d_llm)
         self.down = nn.Linear(d_llm, d_bottleneck)
         self.mix = _transformer(d_bottleneck, n_heads, 4 * d_bottleneck, dropout, 1)
         self.up = nn.Linear(d_bottleneck, d_model)
 
     def forward(self, e):
-        return self.up(self.mix(self.down(self.inp_norm(e))))
+        z = self.down(self.inp_norm(e))
+        if self.mix_mode == "self":
+            n = z.shape[1]
+            mask = ~torch.eye(n, dtype=torch.bool, device=z.device)  # True = not allowed
+            return self.up(self.mix(z, mask=mask))
+        return self.up(self.mix(z))
 
 
 class PDPL(nn.Module):
@@ -258,7 +266,7 @@ def token_infonce(h, e, log_tau):
 
 
 class PACT(nn.Module):
-    LLM_MODES = ("stored", "shuffled", "learned", "random", "none")
+    LLM_MODES = ("stored", "shuffled", "learned", "random", "window", "none")
 
     def __init__(self, cfg):
         super().__init__()
@@ -282,16 +290,20 @@ class PACT(nn.Module):
             raise ValueError(cfg.llm)
         self.use_llm = cfg.llm != "none"
         if self.use_llm:
-            self.adapter = PromptAdapter(cfg.d_llm, cfg.adapter_dim, D, cfg.adapter_heads, cfg.dropout)
+            self.adapter = PromptAdapter(cfg.d_llm, cfg.adapter_dim, D, cfg.adapter_heads, cfg.dropout,
+                                         getattr(cfg, "adapter_mix", "variate"))
             if cfg.llm == "learned":  # capacity-matched control: same adapter, no pre-trained input
                 self.llm_vec = nn.Parameter(torch.randn(N, cfg.d_llm) * 0.02)
             elif cfg.llm == "random":  # fixed random vectors with no sample information
                 g = torch.Generator().manual_seed(cfg.seed)
                 self.register_buffer("llm_vec", torch.randn(N, cfg.d_llm, generator=g))
+            elif cfg.llm == "window":  # control: learned linear encoding of the window-standardised values, no LLM
+                self.win_proj = nn.Linear(L, cfg.d_llm)
 
         self.pdpl = PDPL(D, cfg.n_prototypes, cfg.pdpl_mode, cfg.pdpl_temp) if cfg.pdpl else None
         self.has_prompt = self.use_llm or self.pdpl is not None
-        use_bdca = self.has_prompt and cfg.bdca_iters >= 0
+        self.inject_add = getattr(cfg, "inject", "bdca") == "add"
+        use_bdca = self.has_prompt and cfg.bdca_iters >= 0 and not self.inject_add
         # trend_head="linear": the trend branch is a per-variate linear map (L -> H); only the seasonal branch
         # goes through the encoder, PDPL and BDCA (division of labour between the two streams)
         self.linear_trend = self.decomp is not None and cfg.trend_head == "linear"
@@ -301,6 +313,8 @@ class PACT(nn.Module):
                                    for b in deep}) if use_bdca else None
         self.heads = nn.ModuleDict({b: nn.Sequential(nn.Dropout(cfg.head_dropout), nn.Linear(head_in, H))
                                     for b in deep})
+        if self.inject_add and self.has_prompt:  # control: the prompt is added to the features, no co-attention
+            self.inject = nn.ModuleDict({b: nn.Linear(D, D) for b in deep})
         if self.linear_trend:
             self.trend_linear = nn.Linear(L, H)
         if self.decomp is not None:
@@ -325,9 +339,13 @@ class PACT(nn.Module):
             out["fuse_trend_weight"] = float(torch.sigmoid(self.fuse_w).mean())
         return out
 
-    def _anchor(self, emb, B):
+    def _anchor(self, emb, B, x=None):
         """[B, N, D] anchor from stored embeddings or from the control vectors."""
-        if self.cfg.llm in ("learned", "random"):
+        if self.cfg.llm == "window":
+            w = x.transpose(1, 2)  # [B, N, L]
+            w = (w - w.mean(-1, keepdim=True)) / (w.std(-1, keepdim=True) + 1e-5)
+            emb = self.win_proj(w)
+        elif self.cfg.llm in ("learned", "random"):
             emb = self.llm_vec.unsqueeze(0).expand(B, -1, -1)
         return self.adapter(emb)
 
@@ -349,7 +367,7 @@ class PACT(nn.Module):
         B, _, N = x.shape
         z = self.revin.norm(x) if self.revin is not None else x
         parts = dict(zip(self.branches, self.decomp(z))) if self.decomp is not None else {"main": z}
-        anchor = self._anchor(emb, B) if self.use_llm else None
+        anchor = self._anchor(emb, B, x) if self.use_llm else None
 
         aux = {}
         details = {}
@@ -366,7 +384,10 @@ class PACT(nn.Module):
                 details[f"proto_attn_{b}"] = attn
             else:
                 e = a
-            h = self.bdca[b](h0, e, B if self.cfg.token_mode == "patch" else None) if self.bdca is not None else h0
+            if self.inject_add and e is not None:
+                h = h0 + self.inject[b](e)
+            else:
+                h = self.bdca[b](h0, e, B if self.cfg.token_mode == "patch" else None) if self.bdca is not None else h0
             if self.training and e is not None and self.cfg.lambda_align > 0:
                 aux[f"align_{b}"] = token_infonce(h0, e, self.log_tau)
             preds[b] = self._head(h, b, B, N)
