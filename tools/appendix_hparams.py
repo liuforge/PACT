@@ -46,7 +46,7 @@ def main():
     hs = [96, 192, 336, 720]
     lines = [r"\begin{table}[!htbp]", r"\centering", r"\caption{Hyper-parameters selected on the validation set (seed 2024). "
              r"PACT: learning rate / width $D$ / BDCA feed-forward layer (\ding{51}: on); RLinear and DLinear: learning rate. "
-             r"For PEMS08 the horizons are 12, 24, 48 and 96 and for ILI 24, 36, 48 and 60. All other settings are given in Section~\ref{sec:setup}.}",
+             r"For PEMS08 the horizons are 12, 24, 48 and 96 and for ILI 24, 36, 48 and 60. All other settings are given in Section~4.1 of the main paper.}",
              r"\label{tab:hparams}", r"\small\setlength{\tabcolsep}{5pt}", r"\begin{adjustbox}{max width=\linewidth}",
              r"\begin{tabular}{l cccc cccc}", r"\toprule",
              r" & \multicolumn{4}{c}{PACT} & \multicolumn{4}{c}{RLinear / DLinear} \\",
