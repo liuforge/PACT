@@ -2,7 +2,7 @@ import sys, glob, numpy as np
 sys.path.insert(0, "tools")
 from make_tables import load, MAIN_MODELS, DATASETS, horizons, mean
 R = {}
-for root in glob.glob("../remote_results/sync_*/results"):
+for root in sorted(glob.glob("../remote_results/sync_*/results"), key=str.lower):
     for k, v in load(root).items():
         seen = {r["seed"] for r in R.get(k, [])}
         R.setdefault(k, []).extend(r for r in v if r["seed"] not in seen)

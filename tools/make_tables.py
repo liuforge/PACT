@@ -419,7 +419,7 @@ def main():
     p.add_argument("--bench", default=None, help="JSON written by benchmark_efficiency.py")
     a = p.parse_args()
     R = {}
-    for root in a.root:  # merge roots; a (dataset, model, horizon, seed) run is counted once
+    for root in sorted(a.root, key=str.lower):  # merge roots in a fixed order; a (dataset, model, horizon, seed) run is counted once
         for k, v in load(root).items():
             seen = {r["seed"] for r in R.get(k, [])}
             R.setdefault(k, []).extend(r for r in v if r["seed"] not in seen)

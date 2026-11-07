@@ -95,7 +95,7 @@ def main():
     p.add_argument("--out", required=True)
     a = p.parse_args()
     R = {}
-    for root in a.root:
+    for root in sorted(a.root, key=str.lower):
         for k, v in load(root).items():
             seen = {r["seed"] for r in R.get(k, [])}
             R.setdefault(k, []).extend(r for r in v if r["seed"] not in seen)
