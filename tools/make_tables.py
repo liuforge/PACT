@@ -25,7 +25,7 @@ SHADE_NOTE = r" Shading: \swatch{upc!30}{higher} / \swatch{downc!30}{lower} erro
 MAIN_MODELS = [  # (tag after selection, column title)
     ("pact", "PACT"), ("timecma", "TimeCMA"), ("patchtst", "PatchTST"), ("itransformer", "iTrans."),
     ("timesnet", "TimesNet"), ("dlinear", "DLinear"), ("rlinear", "RLinear"),
-    ("zs_timesfm-3.0-pytorch_ctxL", "TimesFM-3"), ("zs_Toto-2.0-313m_ctxL", "Toto-2"),
+    ("zs_timesfm-3.0-pytorch-clip1_ctxL", "TimesFM-3$^\\ast$"), ("zs_Toto-2.0-313m_ctxL", "Toto-2"),
     ("zs_TimeMoE-200M_ctxL", "Time-MoE"),
 ]
 
@@ -423,7 +423,7 @@ def main():
     w = lambda name, txt: open(os.path.join(a.out, name), "w").write(txt + "\n")  # noqa: E731
     w("main.tex", main_table(R, MAIN_MODELS, "Forecasting results (test MSE/MAE, mean of three seeds; z-scored scale). "
       "All trained models are re-run with the same splits, windows and validation-based model selection; foundation "
-      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). \\first{Coral}: best; \\runnerup{plum}: second; shaded rows: average over horizons.",
+      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). $^\\ast$TimesFM-3 forecasts are clipped to the range of their context extended by that range on each side, because without this guard some forecasts explode on near-constant series (Section~\\ref{sec:results}). \\first{Coral}: best; \\runnerup{plum}: second; shaded rows: average over horizons.",
       "tab:main_results"))
     w("main_full.tex", full_table(R, MAIN_MODELS, "Test MSE (mean $\\pm$ standard deviation over three seeds).",
       "tab:detailed"))
