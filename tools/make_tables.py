@@ -443,6 +443,8 @@ def main():
         ("abl_no_decomp", "w/o decomposition"), ("abl_decomp_ma", "moving-average decomposition"),
         ("abl_decomp_fixed", "fixed-bandwidth Gaussian"), ("abl_no_pdpl", "w/o PDPL (anchor only)"),
         ("abl_xattn", "BDCA $\\rightarrow$ one-way cross-attention"), ("abl_no_bdca", "w/o BDCA (prompt unused)"),
+        ("abl_inject_add", "BDCA $\\rightarrow$ prompt added to the features"),
+        ("abl_adapter_self", "anchor adapter without exchange between variates"),
         ("abl_bdca2", "BDCA with $I=2$"), ("abl_no_div", "w/o $\\mathcal{L}_{div}$"),
         ("abl_no_align", "w/o $\\mathcal{L}_{align}$"), ("abl_no_freq", "w/o $\\mathcal{L}_{freq}$"),
         ("abl_no_all", "w/o decomposition, PDPL and anchor")],
@@ -463,6 +465,8 @@ def main():
         ("llm_gpt2", "GPT-2 (124M, 2019), standardised prompt (PACT)"),
         ("llm_qwen3", "Qwen3-0.6B-Base (2025), same prompt"),
         ("llm_sundial", "Sundial (128M), time-series foundation model"),
+        ("llm_window", "learned linear encoding of the window (no LLM)"),
+        ("llm_window_self", "same, adapter without exchange between variates"),
         ("llm_learned", "learned vectors (same adapter)"),
         ("llm_shuffled", "GPT-2, mismatched window")],
         "Which source should the anchor come from? Relative change of test MSE with respect to the same model "
