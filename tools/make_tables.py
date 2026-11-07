@@ -78,8 +78,12 @@ def pct_cell(v, p=None):
     return shade(v) + f"${v:+.1f}$\\%"
 
 
+def p_txt(p):
+    return "$<$0.001" if p < 0.001 else f"{p:.3f}"
+
+
 def p_cell(p):
-    return rf"\sig{{{p:.3f}}}" if p < 0.05 else f"{p:.3f}"
+    return rf"\sig{{{p_txt(p)}}}" if p < 0.05 else p_txt(p)
 
 
 def fmt_rank(vals, digits=3):
@@ -211,10 +215,10 @@ def versus_table(R, ours, baselines, caption, label):
             ally += list(y)
             cell = pct_cell(np.mean((y - x) / x) * 100)
             if len(x) >= 6:
-                cell += f" ({wilcoxon(x, y).pvalue:.3f})"
+                cell += f" ({p_txt(wilcoxon(x, y).pvalue)})"
             row.append(cell)
         x, y = np.array(allx), np.array(ally)
-        row.append(pct_cell(np.mean((y - x) / x) * 100) + f" ({wilcoxon(x, y).pvalue:.3f})" if len(x) >= 6 else "--")
+        row.append(pct_cell(np.mean((y - x) / x) * 100) + f" ({p_txt(wilcoxon(x, y).pvalue)})" if len(x) >= 6 else "--")
         lines.append(f"{name} & " + " & ".join(row) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
     return "\n".join(lines)
@@ -385,7 +389,7 @@ def fewshot_table(R, caption, label):
                         cells[(ds, H, r["seed"])][c] = r["mse"]
         ks = [k for k in cells if "gpt2" in cells[k] and "none" in cells[k]]
         x = np.array([cells[k]["gpt2"] for k in ks]); y = np.array([cells[k]["none"] for k in ks])
-        pv.append(f"{wilcoxon(x, y).pvalue:.2f}" if len(ks) >= 6 else "--")
+        pv.append(p_txt(wilcoxon(x, y).pvalue) if len(ks) >= 6 else "--")
     lines += [r"\midrule", r"$p$ (GPT-2 vs.\ none) & " + " & ".join(pv) + r" \\", r"\bottomrule", r"\end{tabular}", r"\end{table}"]
     return "\n".join(lines)
 
