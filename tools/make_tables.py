@@ -432,24 +432,50 @@ def main():
     w("main_full.tex", full_table(R, MAIN_MODELS, "Test MSE (mean $\\pm$ standard deviation over three seeds).",
       "tab:detailed"))
     w("llm.tex", paired_table(R, "llm_none", [
-        ("llm_gpt2", "GPT-2, standardised prompt (PACT)"), ("llm_gpt2raw", "GPT-2, raw-value prompt"),
-        ("llm_randinit", "random-init GPT-2"), ("llm_shuffled", "GPT-2, mismatched window"),
+        ("llm_gpt2", "GPT-2 (124M, 2019), standardised prompt (PACT)"),
+        ("llm_qwen3", "Qwen3-0.6B-Base (2025), same prompt"),
+        ("llm_sundial", "Sundial (128M), time-series foundation model"),
+        ("llm_window", "learned linear encoding of the window (no LLM)"),
+        ("llm_randinit", "randomly initialised GPT-2, same prompt"), ("llm_shuffled", "GPT-2, mismatched window"),
+        ("llm_gpt2raw", "GPT-2, raw-value prompt"),
         ("llm_varstatic", "GPT-2, variable description"), ("llm_varnorm", "GPT-2, description + window"),
         ("llm_learned", "learned vectors (same adapter)"), ("llm_random", "fixed random vectors")],
-        "Where does the anchor's contribution come from? Relative change of test MSE with respect to the same model "
-        "without any anchor, averaged over horizons and seeds; $p$: Wilcoxon signed-rank test over all cells.",
-        "tab:llm"))
+        "What does the anchor contribute, and which source should it come from? Relative change of test MSE with "
+        "respect to the same model without anchor (negative: the anchor helps), averaged over horizons and seeds "
+        "(high-dimensional datasets: first and third horizon); $p$: Wilcoxon signed-rank test over all cells. "
+        "$^\\dagger$: the dataset is very likely part of the pre-training corpus of Sundial "
+        "(Section~\\ref{sec:anchor_source}); these cells are excluded from All and $p$.", "tab:llm",
+        flagged={"llm_sundial": SUNDIAL_SEEN}))
+    abl_caption = ("Component ablation: relative change of test MSE with respect to the full model (positive = the "
+                   "component helps); $p$: Wilcoxon signed-rank test over all (dataset, horizon, seed) cells.")
     w("ablation.tex", paired_table(R, "abl_full", [
+        ("abl_no_decomp", "w/o decomposition"), ("abl_decomp_ma", "moving-average decomposition"),
+        ("abl_no_pdpl", "w/o PDPL (anchor only)"), ("abl_xattn", "BDCA $\\rightarrow$ one-way cross-attention"),
+        ("abl_no_bdca", "w/o BDCA (prompt unused)"), ("abl_no_all", "w/o decomposition, PDPL and anchor")],
+        abl_caption + " The remaining variants are in Table~S12 of the supplementary material.", "tab:ablation"))
+    w("ablation_full.tex", paired_table(R, "abl_full", [
         ("abl_no_decomp", "w/o decomposition"), ("abl_decomp_ma", "moving-average decomposition"),
         ("abl_decomp_fixed", "fixed-bandwidth Gaussian"), ("abl_no_pdpl", "w/o PDPL (anchor only)"),
         ("abl_xattn", "BDCA $\\rightarrow$ one-way cross-attention"), ("abl_no_bdca", "w/o BDCA (prompt unused)"),
-        ("abl_inject_add", "BDCA $\\rightarrow$ prompt added to the features"),
-        ("abl_adapter_self", "anchor adapter without exchange between variates"),
         ("abl_bdca2", "BDCA with $I=2$"), ("abl_no_div", "w/o $\\mathcal{L}_{div}$"),
         ("abl_no_align", "w/o $\\mathcal{L}_{align}$"), ("abl_no_freq", "w/o $\\mathcal{L}_{freq}$"),
-        ("abl_no_all", "w/o decomposition, PDPL and anchor")],
-        "Component ablation: relative change of test MSE with respect to the full model (positive = the component "
-        "helps); $p$: Wilcoxon signed-rank test over all (dataset, horizon, seed) cells.", "tab:ablation"))
+        ("abl_no_all", "w/o decomposition, PDPL and anchor")], abl_caption, "tab:ablation_full"))
+    w("decouple.tex", paired_table(R, "abl_full", [
+        ("abl_no_bdca", "w/o prompt pathway (fewer parameters)"),
+        ("abl_bdca_self", "w/o prompt pathway, same depth (self-attention blocks)"),
+        ("abl_const_prompt", "constant prompt shared by all variates, same capacity"),
+        ("llm_none", "prototype prompt without anchor"),
+        ("abl_xattn", "one-way cross-attention (fewer parameters)"),
+        ("abl_bdca_fwd", "one-way cross-attention, same depth"),
+        ("abl_inject_add", "prompt added to the features (fewer parameters)"),
+        ("abl_add_deep", "prompt added to the features, same depth"),
+        ("abl_adapter_self", "anchor adapter without exchange between variates"),
+        ("llm_window", "learned linear window encoding instead of GPT-2"),
+        ("llm_window_self", "same, adapter without exchange between variates")],
+        "Decoupling the prompt pathway on the high-dimensional datasets (first and third horizon, three seeds): "
+        "relative change of test MSE with respect to PACT (positive: PACT is better). ``Same depth'' and ``same "
+        "capacity'' variants have the number of parameters of PACT within 5\\%; $p$: Wilcoxon signed-rank test.",
+        "tab:decouple", datasets=["Solar", "PEMS08", "ECL", "Traffic"]))
     w("fewshot.tex", fewshot_table(R, "Few-shot forecasting: test MSE averaged over datasets, horizons and seeds when only "
       "the first $p\\%$ of the training windows are used.", "tab:fewshot"))
     w("transfer.tex", transfer_table(R, "Cross-domain zero-shot forecasting (test MSE on the target, averaged over horizons "
@@ -461,19 +487,6 @@ def main():
       "512-step context, on the same test targets as the main results (Time-MoE is not run with this context because of its "
       "cost).", "tab:long",
       datasets=["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather"]))
-    w("anchor_source.tex", paired_table(R, "llm_none", [
-        ("llm_gpt2", "GPT-2 (124M, 2019), standardised prompt (PACT)"),
-        ("llm_qwen3", "Qwen3-0.6B-Base (2025), same prompt"),
-        ("llm_sundial", "Sundial (128M), time-series foundation model"),
-        ("llm_window", "learned linear encoding of the window (no LLM)"),
-        ("llm_window_self", "same, adapter without exchange between variates"),
-        ("llm_learned", "learned vectors (same adapter)"),
-        ("llm_shuffled", "GPT-2, mismatched window")],
-        "Which source should the anchor come from? Relative change of test MSE with respect to the same model "
-        "without anchor (negative: the anchor helps), averaged over horizons and seeds; $p$: Wilcoxon "
-        "signed-rank test over all cells. $^\\dagger$: the dataset is very likely part of the pre-training corpus of "
-        "Sundial (Section~\\ref{sec:anchor_source}); these cells are excluded from All and $p$.", "tab:anchor_source",
-        flagged={"llm_sundial": SUNDIAL_SEEN}))
     w("prompt_content.tex", paired_table(R, "llm_gpt2", [
         ("llm_gpt2raw", "raw values, integers (TimeCMA template)"), ("llm_raw1f", "raw values, one decimal"),
         ("llm_gz", "training z-score (level kept, units removed)"),
