@@ -76,6 +76,10 @@ def get_args(argv=None):
     a("--bdca_ffn", type=int, default=1)
     a("--adapter_mix", default="variate", choices=["variate", "self"], help="self: control without mixing across variates")
     a("--inject", default="bdca", choices=["bdca", "add"], help="add: control that adds the prompt to the features")
+    a("--bdca_mode", default="bi", choices=["bi", "fwd", "self"], help="fwd/self: capacity-matched controls (2I+1 blocks)")
+    a("--const_prompt", type=int, default=0, help="1: BDCA reads a learned prompt shared by all variates (control)")
+    a("--n_variates", type=int, default=0, help=">0: train and evaluate on a fixed random subset of the variates")
+    a("--variate_seed", type=int, default=0)
     a("--bdca_xvar", type=int, default=0, help="BDCA backward step also calibrates prompts across variates")
     a("--pdpl_mode", default="dot", choices=["dot", "cos", "kv"],
       help="cos: cosine retrieval with learnable temperature; kv: separate key/value prototypes")
@@ -208,6 +212,13 @@ def main(argv=None):
     device = torch.device(args.device if (args.device != "cuda" or torch.cuda.is_available()) else "cpu")
 
     series = load_series(args.dataset, args.root_path, args.seq_len, args.data_file)
+    if args.n_variates and args.n_variates < series["raw"].shape[1]:  # fixed subset, independent of the training seed
+        if args.llm in ("stored", "shuffled"):
+            raise ValueError("--n_variates is supported for anchors computed in the model only")
+        idx = np.sort(np.random.default_rng(args.variate_seed).choice(series["raw"].shape[1], args.n_variates, replace=False))
+        for k in ("raw", "scaled", "mean", "std"):
+            series[k] = series[k][..., idx] if series[k].ndim > 1 else series[k][idx]
+        series["columns"] = [series["columns"][i] for i in idx]
     args.num_vars = series["raw"].shape[1]
 
     store = None

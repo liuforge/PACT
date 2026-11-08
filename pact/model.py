@@ -223,12 +223,20 @@ class BDCA(nn.Module):
     the backward step injects inter-variate dependencies that the channel-independent encoder lacks.
     """
 
-    def __init__(self, d_model, n_heads, iters, dropout, ffn=True, cross_variate=False):
+    def __init__(self, d_model, n_heads, iters, dropout, ffn=True, cross_variate=False, mode="bi"):
         super().__init__()
         self.iters = iters
         self.cross_variate = cross_variate
-        self.fwd = nn.ModuleList([CrossBlock(d_model, n_heads, dropout, ffn) for _ in range(iters + 1)])
-        self.bwd = nn.ModuleList([CrossBlock(d_model, n_heads, dropout, ffn) for _ in range(iters)])
+        # mode="fwd" (control): the same number of blocks (2I+1), all forward retrievals against the fixed prompt;
+        # mode="self" (control): the same number of blocks, all self-attention over the tokens (the prompt is not read)
+        self.mode = mode
+        if mode != "bi":
+            self.fwd = nn.ModuleList([CrossBlock(d_model, n_heads, dropout, ffn) for _ in range(2 * iters + 1)])
+            self.bwd = nn.ModuleList()
+            cross_variate = self.cross_variate = False
+        else:
+            self.fwd = nn.ModuleList([CrossBlock(d_model, n_heads, dropout, ffn) for _ in range(iters + 1)])
+            self.bwd = nn.ModuleList([CrossBlock(d_model, n_heads, dropout, ffn) for _ in range(iters)])
         if cross_variate:
             self.bwd_var = nn.ModuleList([CrossBlock(d_model, n_heads, dropout, ffn) for _ in range(iters)])
         self.gate = nn.Linear(2 * d_model, d_model)
@@ -243,6 +251,12 @@ class BDCA(nn.Module):
 
     def forward(self, h0, e0, batch_size=None):
         h, e = h0, e0
+        if self.mode != "bi":
+            for blk in self.fwd:
+                h = blk(h, e if self.mode == "fwd" else h)
+            g = torch.sigmoid(self.gate(torch.cat([h0, h], dim=-1)))
+            self.last = {"gate_bdca": float(g.detach().mean())}
+            return g * h + (1 - g) * h0
         for i in range(self.iters):
             h = self.fwd[i](h, e)
             e = self.bwd[i](e, h)
@@ -301,15 +315,23 @@ class PACT(nn.Module):
                 self.win_proj = nn.Linear(L, cfg.d_llm)
 
         self.pdpl = PDPL(D, cfg.n_prototypes, cfg.pdpl_mode, cfg.pdpl_temp) if cfg.pdpl else None
-        self.has_prompt = self.use_llm or self.pdpl is not None
+        # const_prompt (control): BDCA reads a learned prompt shared by all variates and windows (no PDPL, no anchor)
+        self.const_prompt = None
+        if getattr(cfg, "const_prompt", 0):
+            assert not self.use_llm and self.pdpl is None and cfg.token_mode == "patch"
+            self.const_prompt = nn.Parameter(torch.randn(1, self.encoder.num_tokens, D) * 0.02)
+        self.has_prompt = self.use_llm or self.pdpl is not None or self.const_prompt is not None
         self.inject_add = getattr(cfg, "inject", "bdca") == "add"
-        use_bdca = self.has_prompt and cfg.bdca_iters >= 0 and not self.inject_add
+        # inject="add" with bdca_mode="self" (control): the prompt is added to the features, followed by the same
+        # number of (self-attention) blocks as BDCA, i.e. additive injection at matched capacity
+        use_bdca = self.has_prompt and cfg.bdca_iters >= 0 and (not self.inject_add or getattr(cfg, "bdca_mode", "bi") == "self")
         # trend_head="linear": the trend branch is a per-variate linear map (L -> H); only the seasonal branch
         # goes through the encoder, PDPL and BDCA (division of labour between the two streams)
         self.linear_trend = self.decomp is not None and cfg.trend_head == "linear"
         deep = [b for b in self.branches if not (self.linear_trend and b == "trend")]
         xvar = bool(cfg.bdca_xvar) and cfg.token_mode == "patch"
-        self.bdca = nn.ModuleDict({b: BDCA(D, cfg.n_heads, cfg.bdca_iters, cfg.dropout, cfg.bdca_ffn, xvar)
+        self.bdca = nn.ModuleDict({b: BDCA(D, cfg.n_heads, cfg.bdca_iters, cfg.dropout, cfg.bdca_ffn, xvar,
+                                           getattr(cfg, "bdca_mode", "bi"))
                                    for b in deep}) if use_bdca else None
         self.heads = nn.ModuleDict({b: nn.Sequential(nn.Dropout(cfg.head_dropout), nn.Linear(head_in, H))
                                     for b in deep})
@@ -382,12 +404,13 @@ class PACT(nn.Module):
             if self.pdpl is not None:
                 e, attn = self.pdpl(h0, a)
                 details[f"proto_attn_{b}"] = attn
+            elif self.const_prompt is not None:
+                e = self.const_prompt.expand(h0.shape[0], -1, -1)
             else:
                 e = a
-            if self.inject_add and e is not None:
-                h = h0 + self.inject[b](e)
-            else:
-                h = self.bdca[b](h0, e, B if self.cfg.token_mode == "patch" else None) if self.bdca is not None else h0
+            h = h0 + self.inject[b](e) if self.inject_add and e is not None else h0
+            if self.bdca is not None:
+                h = self.bdca[b](h, e, B if self.cfg.token_mode == "patch" else None)
             if self.training and e is not None and self.cfg.lambda_align > 0:
                 aux[f"align_{b}"] = token_infonce(h0, e, self.log_tau)
             preds[b] = self._head(h, b, B, N)
