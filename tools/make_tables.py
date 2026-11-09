@@ -529,7 +529,8 @@ def main():
         "(Section~\\ref{sec:anchor_source}); these cells are excluded from All and $p$.", "tab:llm",
         flagged={"llm_sundial": SUNDIAL_SEEN}))
     abl_caption = ("Component ablation: relative change of test MSE with respect to the full model (positive = the "
-                   "component helps); $p$: Wilcoxon signed-rank test over all (dataset, horizon, seed) cells.")
+                   "component helps); $p$: Wilcoxon signed-rank test over all (dataset, horizon, seed) cells. High-dimensional datasets: "
+                   "first and third horizon, all variants and the full model with the 20-epoch budget.")
     w("ablation.tex", paired_table(R, "abl_full", [
         ("abl_no_decomp", "w/o decomposition"), ("abl_decomp_ma", "moving-average decomposition"),
         ("abl_no_pdpl", "w/o PDPL (anchor only)"), ("abl_xattn", "BDCA $\\rightarrow$ one-way cross-attention"),
