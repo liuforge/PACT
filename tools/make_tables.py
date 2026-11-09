@@ -297,6 +297,33 @@ def full_table(R, models, caption, label):
     return "\n".join(lines)
 
 
+def linear_anchor_table(R):
+    """Supplementary: GPT-2 anchor (main results) vs. learned linear window encoding, both with the budget of the
+    main results (50 epochs) on every horizon of the high-dimensional datasets."""
+    lines = [r"\begin{table}[!htbp]", r"\centering",
+             r"\caption{PACT with the GPT-2 anchor (main results) and with a learned linear encoding of the window instead "
+             r"of GPT-2, both trained with the budget of the main results (at most 50 epochs) on every horizon of the "
+             r"high-dimensional datasets: test MSE (mean over three seeds) and relative change of the linear anchor "
+             r"(negative: the linear anchor is better).}",
+             r"\label{tab:linear_anchor}", r"\small", r"\begin{tabular}{l c c c r}", r"\toprule",
+             r"Dataset & $H$ & GPT-2 anchor & linear anchor & change \\", r"\midrule"]
+    for ds in ("Solar", "PEMS08", "ECL", "Traffic"):
+        rel = []
+        for H in horizons(ds):
+            a, b = R.get((ds, "pact", H)), R.get((ds, "winlong", H))
+            if not a or not b or len(b) < 3:
+                lines.append(f"{ds} & {H} & {mean(a, 'mse'):.3f} & -- & -- \\\\" if a else f"{ds} & {H} & -- & -- & -- \\\\")
+                continue
+            x, y = mean(a, "mse"), mean(b, "mse")
+            rel.append((y - x) / x * 100)
+            lines.append(f"{ds} & {H} & {x:.3f} & {y:.3f} & ${(y - x) / x * 100:+.1f}$\\% \\\\")
+        if len(rel) == len(horizons(ds)):
+            lines.append(f"\\rowcolor{{avgbg}} {ds} & Avg & & & ${np.mean(rel):+.1f}$\\% \\\\")
+        lines.append(r"\midrule" if ds != "Traffic" else r"\bottomrule")
+    lines += [r"\end{tabular}", r"\end{table}"]
+    return "\n".join(lines)
+
+
 def decouple_table(R):
     """Appendix A: capacity-matched decoupling of the conditioning pathway on the high-dimensional datasets, in two
     panels (fewer parameters / same capacity), with the parameter count on PEMS08 (H=12) of every variant."""
@@ -480,11 +507,11 @@ def main():
     use_long(R)
     os.makedirs(a.out, exist_ok=True)
     w = lambda name, txt: open(os.path.join(a.out, name), "w").write(txt + "\n")  # noqa: E731
-    w("main.tex", main_table(R, MAIN_MODELS, "Forecasting results (test MSE/MAE, mean of three seeds; z-scored scale). "
+    w("main.tex", main_table(R, MAIN_MODELS, "Forecasting results (test MSE/MAE; mean over three seeds for trained models, single evaluation for zero-shot foundation models; z-scored scale). "
       "All trained models are re-run with the same splits, windows and validation-based model selection; foundation "
       "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). $^\\ast$TimesFM-3 forecasts are clipped to the range of their context extended by that range on each side, because without this guard some forecasts explode on near-constant series (Section~\\ref{sec:results}). \\first{Coral}: best; \\runnerup{plum}: second; shaded rows: average over horizons. 1st count: number of the 40 dataset--horizon cells in which a model has the lowest displayed value among all models of the table (ties count for each tied model).",
       "tab:main_results"))
-    w("main_full.tex", full_table(R, MAIN_MODELS, "Test MSE (mean $\\pm$ standard deviation over three seeds).",
+    w("main_full.tex", full_table(R, MAIN_MODELS, "Test MSE (mean $\\pm$ standard deviation over three seeds for trained models; zero-shot foundation models are reported as single evaluation values).",
       "tab:detailed"))
     w("llm.tex", paired_table(R, "llm_none", [
         ("llm_gpt2", "GPT-2 (124M, 2019), standardised prompt (PACT)"),
@@ -516,6 +543,7 @@ def main():
         ("abl_no_align", "w/o $\\mathcal{L}_{align}$"), ("abl_no_freq", "w/o $\\mathcal{L}_{freq}$"),
         ("abl_no_all", "w/o decomposition, PDPL and anchor")], abl_caption, "tab:ablation_full"))
     w("decouple.tex", decouple_table(R))
+    w("linear_anchor.tex", linear_anchor_table(R))
     w("fewshot.tex", fewshot_table(R, "Few-shot forecasting on ETTh1, ETTh2 and ETTm2 ($H \\in \\{96, 336\\}$, three seeds): test MSE averaged over these datasets, horizons and seeds when only "
       "the first $p\\%$ of the training windows are used.", "tab:fewshot"))
     w("transfer.tex", transfer_table(R, "Cross-dataset zero-shot transfer within the ETT family, with the source--target pairs of Time-LLM (test MSE on the target, averaged over horizons "
