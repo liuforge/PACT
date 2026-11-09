@@ -297,6 +297,46 @@ def full_table(R, models, caption, label):
     return "\n".join(lines)
 
 
+def decouple_table(R):
+    """Appendix A: capacity-matched decoupling of the conditioning pathway on the high-dimensional datasets, in two
+    panels (fewer parameters / same capacity), with the parameter count on PEMS08 (H=12) of every variant."""
+    hd = ["Solar", "PEMS08", "ECL", "Traffic"]
+    panels = [("A. Variants with fewer parameters", [
+        ("abl_no_bdca", "w/o prompt pathway"), ("abl_xattn", "one-way cross-attention"),
+        ("abl_inject_add", "prompt added to the features")]),
+        ("B. Variants with the capacity of PACT", [
+        ("abl_bdca_self", "w/o prompt pathway, same depth (self-attention blocks)"),
+        ("abl_const_prompt", "constant prompt shared by all variates"),
+        ("llm_none", "prototype prompt without anchor"),
+        ("abl_adapter_self", "anchor adapter without exchange between variates"),
+        ("abl_bdca_fwd", "one-way cross-attention, same depth"),
+        ("abl_add_deep", "prompt added to the features, same depth"),
+        ("llm_window", "learned linear window encoding instead of GPT-2"),
+        ("llm_window_self", "same, adapter without exchange between variates")])]
+    def params(tag):
+        t = ALIASES.get(tag, tag)
+        v = [r["params"] for r in R.get(("PEMS08", t, 12), []) if r.get("params")]
+        return f"{np.mean(v) / 1e6:.2f}M" if v else "--"
+    lines = [r"\begin{table}[!htbp]", r"\centering",
+             r"\caption{Capacity-matched decoupling of the conditioning pathway on the high-dimensional datasets (first and "
+             r"third horizon, three seeds): relative change of test MSE with respect to PACT trained with the same 20-epoch "
+             r"budget (positive: PACT is better); Params: trainable parameters on PEMS08 ($H=12$; PACT "
+             + params("abl_full") + r"); $p$: Wilcoxon signed-rank test over all cells." + SHADE_NOTE + "}",
+             r"\label{tab:decouple}", r"\small\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.1}",
+             r"\begin{adjustbox}{max width=\linewidth}", r"\begin{tabular}{l r cccc | c c}", r"\toprule",
+             r"Variant & Params & " + " & ".join(hd) + r" & All & $p$ \\", r"\midrule"]
+    for title, variants in panels:
+        body = paired_table(R, "abl_full", variants, "", "x", datasets=hd)
+        rows = [l for l in body.splitlines() if l.endswith(r"\\") and not l.startswith("Variant")]
+        lines.append(r"\multicolumn{8}{l}{\textit{" + title + r"}} \\")
+        for (tag, _), row in zip(variants, rows):
+            name, rest = row.split(" & ", 1)
+            lines.append(name + " & " + params(tag) + " & " + rest)
+        lines.append(r"\midrule" if title.startswith("A") else r"\bottomrule")
+    lines += [r"\end{tabular}", r"\end{adjustbox}", r"\end{table}"]
+    return "\n".join(lines)
+
+
 def paired_table(R, ref, variants, caption, label, datasets=None, flagged=None):
     """Relative test-MSE change of each variant vs. ref over (dataset, H, seed) cells, with Wilcoxon p.
     flagged: {tag: datasets} cells shown with a dagger and left out of the All column and p (e.g. possible
@@ -475,22 +515,7 @@ def main():
         ("abl_bdca2", "BDCA with $I=2$"), ("abl_no_div", "w/o $\\mathcal{L}_{div}$"),
         ("abl_no_align", "w/o $\\mathcal{L}_{align}$"), ("abl_no_freq", "w/o $\\mathcal{L}_{freq}$"),
         ("abl_no_all", "w/o decomposition, PDPL and anchor")], abl_caption, "tab:ablation_full"))
-    w("decouple.tex", paired_table(R, "abl_full", [
-        ("abl_no_bdca", "w/o prompt pathway (fewer parameters)"),
-        ("abl_bdca_self", "w/o prompt pathway, same depth (self-attention blocks)"),
-        ("abl_const_prompt", "constant prompt shared by all variates, same capacity"),
-        ("llm_none", "prototype prompt without anchor"),
-        ("abl_xattn", "one-way cross-attention (fewer parameters)"),
-        ("abl_bdca_fwd", "one-way cross-attention, same depth"),
-        ("abl_inject_add", "prompt added to the features (fewer parameters)"),
-        ("abl_add_deep", "prompt added to the features, same depth"),
-        ("abl_adapter_self", "anchor adapter without exchange between variates"),
-        ("llm_window", "learned linear window encoding instead of GPT-2"),
-        ("llm_window_self", "same, adapter without exchange between variates")],
-        "Decoupling the prompt pathway on the high-dimensional datasets (first and third horizon, three seeds): "
-        "relative change of test MSE with respect to PACT (positive: PACT is better). ``Same depth'' and ``same "
-        "capacity'' variants have the number of parameters of PACT within 5\\%; $p$: Wilcoxon signed-rank test.",
-        "tab:decouple", datasets=["Solar", "PEMS08", "ECL", "Traffic"]))
+    w("decouple.tex", decouple_table(R))
     w("fewshot.tex", fewshot_table(R, "Few-shot forecasting: test MSE averaged over datasets, horizons and seeds when only "
       "the first $p\\%$ of the training windows are used.", "tab:fewshot"))
     w("transfer.tex", transfer_table(R, "Cross-domain zero-shot forecasting (test MSE on the target, averaged over horizons "
