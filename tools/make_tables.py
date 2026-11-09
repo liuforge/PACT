@@ -19,7 +19,21 @@ DATASETS = ["ETTh1", "ETTh2", "ETTm1", "ETTm2", "Weather", "Solar", "PEMS08", "E
 # datasets whose series are very likely in Sundial's pre-training corpus (TimeBench includes the Chronos corpus,
 # with the NREL solar data of 2006, and LOTSA, with PEMS08 and Traffic); Sundial itself excludes ETT, ECL and Weather
 SUNDIAL_SEEN = ("Solar", "PEMS08", "Traffic")
-ALIASES = {"abl_full": "pact", "llm_gpt2": "pact"}
+# ablations and anchor controls are compared with PACT trained under the same budget (20 epochs on the
+# high-dimensional datasets): "pact20"; the main results use the 50-epoch runs there (see use_long)
+ALIASES = {"abl_full": "pact20", "llm_gpt2": "pact20"}
+HIGH_DIM = ("Solar", "PEMS08", "ECL", "Traffic")
+
+
+def use_long(R):
+    """Keep the 20-epoch PACT runs as 'pact20' and let 'pact' be the 50-epoch runs ('pactlong') where they exist."""
+    for (ds, tag, H) in list(R):
+        if tag == "pact":
+            R[(ds, "pact20", H)] = R[(ds, tag, H)]
+    for (ds, tag, H) in list(R):
+        if tag == "pactlong" and ds in HIGH_DIM:
+            R[(ds, "pact", H)] = R[(ds, tag, H)]
+    return R
 HORIZONS = {"ILI": [24, 36, 48, 60], "PEMS08": [12, 24, 48, 96]}
 SHADE_NOTE = r" Shading: \swatch{upc!30}{higher} / \swatch{downc!30}{lower} error than the reference; bold: $p<0.05$."
 MAIN_MODELS = [  # (tag after selection, column title)
@@ -423,6 +437,7 @@ def main():
         for k, v in load(root).items():
             seen = {r["seed"] for r in R.get(k, [])}
             R.setdefault(k, []).extend(r for r in v if r["seed"] not in seen)
+    use_long(R)
     os.makedirs(a.out, exist_ok=True)
     w = lambda name, txt: open(os.path.join(a.out, name), "w").write(txt + "\n")  # noqa: E731
     w("main.tex", main_table(R, MAIN_MODELS, "Forecasting results (test MSE/MAE, mean of three seeds; z-scored scale). "

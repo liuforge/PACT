@@ -1,11 +1,12 @@
 import sys, glob, numpy as np
 sys.path.insert(0, "tools")
-from make_tables import load, MAIN_MODELS, DATASETS, horizons, mean
+from make_tables import load, use_long, MAIN_MODELS, DATASETS, horizons, mean
 R = {}
 for root in sorted(glob.glob("../remote_results/sync_*/results"), key=str.lower):
     for k, v in load(root).items():
         seen = {r["seed"] for r in R.get(k, [])}
         R.setdefault(k, []).extend(r for r in v if r["seed"] not in seen)
+use_long(R)
 trained = [t for t, _ in MAIN_MODELS if not t.startswith("zs_")]
 names = dict(MAIN_MODELS)
 for key in ("mse", "mae"):

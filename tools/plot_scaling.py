@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_tables import ALIASES, SUNDIAL_SEEN, load  # noqa: E402
+from make_tables import ALIASES, SUNDIAL_SEEN, load, use_long  # noqa: E402
 
 ORDER = [("ETTh1", 7), ("ETTh2", 7), ("ETTm1", 7), ("ETTm2", 7), ("ILI", 7), ("Weather", 21), ("Solar", 137),
          ("PEMS08", 170), ("ECL", 321), ("Traffic", 862)]
@@ -99,6 +99,7 @@ def main():
         for k, v in load(root).items():
             seen = {r["seed"] for r in R.get(k, [])}
             R.setdefault(k, []).extend(r for r in v if r["seed"] not in seen)
+    use_long(R)
     c = cells(R)
     apply_style(plt, 8)
     fig, axes = plt.subplots(1, 3, figsize=(6.9, 2.75), sharey=True)
@@ -109,7 +110,7 @@ def main():
                        ("w/o PDPL", "abl_no_pdpl", "abl_full")],
           "(b) Component removed or replaced", "rel. MSE (%), > 0: component helps")
     panel(axes[2], c, [("GPT-2", "llm_gpt2", "llm_none"), ("Qwen3-0.6B", "llm_qwen3", "llm_none"),
-                       ("Sundial", "llm_sundial", "llm_none", SUNDIAL_SEEN), ("learned vectors", "llm_learned", "llm_none")],
+                       ("Sundial", "llm_sundial", "llm_none", SUNDIAL_SEEN), ("linear window encoding", "llm_window", "llm_none")],
           "(c) Anchor source vs. no anchor", "rel. MSE (%), < 0: anchor helps")
     axes[0].set_xlim(-47, axes[0].get_xlim()[1])
     fig.tight_layout(w_pad=0.6)
