@@ -449,7 +449,7 @@ def fewshot_table(R, caption, label):
 
 
 def transfer_table(R, caption, label):
-    """Cross-domain zero-shot: model trained on the source, evaluated on the target test split."""
+    """Cross-dataset zero-shot transfer: model trained on the source, evaluated on the target test split."""
     conds = [("tr_gpt2", "GPT-2"), ("tr_learned", "learned"), ("tr_none", "none")]
     pairs = collections.defaultdict(lambda: collections.defaultdict(list))
     for (ds, t, H), runs in R.items():
@@ -482,7 +482,7 @@ def main():
     w = lambda name, txt: open(os.path.join(a.out, name), "w").write(txt + "\n")  # noqa: E731
     w("main.tex", main_table(R, MAIN_MODELS, "Forecasting results (test MSE/MAE, mean of three seeds; z-scored scale). "
       "All trained models are re-run with the same splits, windows and validation-based model selection; foundation "
-      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). $^\\ast$TimesFM-3 forecasts are clipped to the range of their context extended by that range on each side, because without this guard some forecasts explode on near-constant series (Section~\\ref{sec:results}). \\first{Coral}: best; \\runnerup{plum}: second; shaded rows: average over horizons.",
+      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). $^\\ast$TimesFM-3 forecasts are clipped to the range of their context extended by that range on each side, because without this guard some forecasts explode on near-constant series (Section~\\ref{sec:results}). \\first{Coral}: best; \\runnerup{plum}: second; shaded rows: average over horizons. 1st count: number of the 40 dataset--horizon cells in which a model has the lowest displayed value among all models of the table (ties count for each tied model).",
       "tab:main_results"))
     w("main_full.tex", full_table(R, MAIN_MODELS, "Test MSE (mean $\\pm$ standard deviation over three seeds).",
       "tab:detailed"))
@@ -516,9 +516,9 @@ def main():
         ("abl_no_align", "w/o $\\mathcal{L}_{align}$"), ("abl_no_freq", "w/o $\\mathcal{L}_{freq}$"),
         ("abl_no_all", "w/o decomposition, PDPL and anchor")], abl_caption, "tab:ablation_full"))
     w("decouple.tex", decouple_table(R))
-    w("fewshot.tex", fewshot_table(R, "Few-shot forecasting: test MSE averaged over datasets, horizons and seeds when only "
+    w("fewshot.tex", fewshot_table(R, "Few-shot forecasting on ETTh1, ETTh2 and ETTm2 ($H \\in \\{96, 336\\}$, three seeds): test MSE averaged over these datasets, horizons and seeds when only "
       "the first $p\\%$ of the training windows are used.", "tab:fewshot"))
-    w("transfer.tex", transfer_table(R, "Cross-domain zero-shot forecasting (test MSE on the target, averaged over horizons "
+    w("transfer.tex", transfer_table(R, "Cross-dataset zero-shot transfer within the ETT family, with the source--target pairs of Time-LLM (test MSE on the target, averaged over horizons "
       "and seeds): the model is trained on the source dataset only.", "tab:transfer"))
     long_models = [("L512_pact", "PACT"), ("L512_patchtst", "PatchTST"), ("L512_rlinear", "RLinear"),
                    ("zs_timesfm-3.0-pytorch_ctx512", "TimesFM-3"), ("zs_Toto-2.0-313m_ctx512", "Toto-2")]
