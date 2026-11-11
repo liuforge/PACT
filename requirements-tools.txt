@@ -1,0 +1,4 @@
+# Only what tools/make_tables.py, tools/plot_scaling.py and tools/rank_summary.py need
+numpy==2.5.4
+scipy==1.18.1
+matplotlib==3.11.2
