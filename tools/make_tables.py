@@ -35,7 +35,7 @@ def use_long(R):
             R[(ds, "pact", H)] = R[(ds, tag, H)]
     return R
 HORIZONS = {"ILI": [24, 36, 48, 60], "PEMS08": [12, 24, 48, 96]}
-SHADE_NOTE = r" Shading: \swatch{upc!30}{higher} / \swatch{downc!30}{lower} error than the reference; bold: $p<0.05$."
+SHADE_NOTE = r" \worse{Red}: higher, \better{blue}: lower error than the reference; bold $p$: $p<0.05$."
 MAIN_MODELS = [  # (tag after selection, column title)
     ("pact", "PACT"), ("timecma", "TimeCMA"), ("patchtst", "PatchTST"), ("itransformer", "iTrans."),
     ("timesnet", "TimesNet"), ("dlinear", "DLinear"), ("rlinear", "RLinear"),
@@ -80,16 +80,13 @@ def mean(runs, key):
     return float(np.mean([r[key] for r in runs]))
 
 
-def shade(v, cap=8.0, top=40):
-    """Cell background for a relative change v (in %): red when the error increases, blue when it decreases,
-    intensity proportional to |v| and saturating at cap."""
-    k = int(round(min(abs(v) / cap, 1.0) * top))
-    return "" if k < 3 else rf"\cellcolor{{{'upc' if v > 0 else 'downc'}!{k}}}"
-
-
 def pct_cell(v, p=None):
+    """Relative change v (in %) as text: red when the error increases, blue when it decreases (|v| >= 0.6%)."""
     v = 0.0 if round(v, 1) == 0 else v  # no "-0.0"
-    return shade(v) + f"${v:+.1f}$\\%"
+    txt = f"${v:+.1f}$\\%"
+    if abs(v) < 0.6:
+        return txt
+    return (r"\worse{" if v > 0 else r"\better{") + txt + "}"
 
 
 def p_txt(p):
@@ -115,7 +112,7 @@ def fmt_rank(vals, digits=3):
 
 
 def main_table(R, models, caption, label, datasets=None):
-    cols = "c c " + r">{\columncolor{oursbg}}c>{\columncolor{oursbg}}c " + " ".join(["cc"] * (len(models) - 1))
+    cols = "c c " + "c c " + " ".join(["cc"] * (len(models) - 1))
     lines = [r"\begin{table*}[!htbp]", r"\centering", r"\caption{" + caption + "}", r"\label{" + label + "}",
              r"\setlength{\tabcolsep}{3.2pt}", r"\begin{adjustbox}{max width=\textwidth, max totalheight=0.86\textheight}",
              r"\begin{tabular}{" + cols + "}", r"\toprule",
@@ -159,7 +156,7 @@ def main_table(R, models, caption, label, datasets=None):
             cells = [r"\multicolumn{2}{c}{div.}" if d else f"{a} & {b}" for a, b, d in zip(fmt_rank(mse), fmt_rank(mae), div)]
             if H == "Avg":  # dataset name, rotated, spanning the rows of the dataset (drawn last, above the shading)
                 n = len(rows) + 1
-                rows.append(r"\rowcolor{avgbg}\cellcolor{white}\multirow{-" + str(n) + r"}{*}{\rotatebox[origin=c]{90}{"
+                rows.append(r"\multirow{-" + str(n) + r"}{*}{\rotatebox[origin=c]{90}{"
                             + ds + "}}" + " & Avg & " + " & ".join(cells) + r" \\")
             else:
                 rows.append(f" & {H} & " + " & ".join(cells) + r" \\")
@@ -318,7 +315,7 @@ def linear_anchor_table(R):
             rel.append((y - x) / x * 100)
             lines.append(f"{ds} & {H} & {x:.3f} & {y:.3f} & ${(y - x) / x * 100:+.1f}$\\% \\\\")
         if len(rel) == len(horizons(ds)):
-            lines.append(f"\\rowcolor{{avgbg}} {ds} & Avg & & & ${np.mean(rel):+.1f}$\\% \\\\")
+            lines.append(f"{ds} & \\textit{{Avg}} & & & ${np.mean(rel):+.1f}$\\% \\\\")
         lines.append(r"\midrule" if ds != "Traffic" else r"\bottomrule")
     lines += [r"\end{tabular}", r"\end{table}"]
     return "\n".join(lines)
@@ -509,7 +506,7 @@ def main():
     w = lambda name, txt: open(os.path.join(a.out, name), "w").write(txt + "\n")  # noqa: E731
     w("main.tex", main_table(R, MAIN_MODELS, "Forecasting results (test MSE/MAE; mean over three seeds for trained models, single evaluation for zero-shot foundation models; z-scored scale). "
       "All trained models are re-run with the same splits, windows and validation-based model selection; foundation "
-      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). $^\\ast$TimesFM-3 forecasts are clipped to the range of their context extended by that range on each side, because without this guard some forecasts explode on near-constant series (Section~\\ref{sec:results}). \\first{Coral}: best; \\runnerup{plum}: second; shaded rows: average over horizons. 1st count: number of the 40 dataset--horizon cells in which a model has the lowest displayed value among all models of the table (ties count for each tied model).",
+      "models are zero-shot with the same context as the look-back of the other models (96 steps; 36 for ILI). $^\\ast$TimesFM-3 forecasts are clipped to the range of their context extended by that range on each side, because without this guard some forecasts explode on near-constant series (Section~\\ref{sec:results}). \\first{Bold}: best; \\runnerup{italic}: second; Avg rows: average over horizons. 1st count: number of the 40 dataset--horizon cells in which a model has the lowest displayed value among all models of the table (ties count for each tied model).",
       "tab:main_results"))
     w("main_full.tex", full_table(R, MAIN_MODELS, "Test MSE (mean $\\pm$ standard deviation over three seeds for trained models; zero-shot foundation models are reported as single evaluation values).",
       "tab:detailed"))
