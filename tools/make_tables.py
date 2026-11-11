@@ -35,7 +35,7 @@ def use_long(R):
             R[(ds, "pact", H)] = R[(ds, tag, H)]
     return R
 HORIZONS = {"ILI": [24, 36, 48, 60], "PEMS08": [12, 24, 48, 96]}
-SHADE_NOTE = r" \worse{Red}: higher, \better{blue}: lower error than the reference; bold $p$: $p<0.05$."
+SHADE_NOTE = r" Positive values: higher error than the reference; bold $p$: $p<0.05$."
 MAIN_MODELS = [  # (tag after selection, column title)
     ("pact", "PACT"), ("timecma", "TimeCMA"), ("patchtst", "PatchTST"), ("itransformer", "iTrans."),
     ("timesnet", "TimesNet"), ("dlinear", "DLinear"), ("rlinear", "RLinear"),
@@ -81,12 +81,9 @@ def mean(runs, key):
 
 
 def pct_cell(v, p=None):
-    """Relative change v (in %) as text: red when the error increases, blue when it decreases (|v| >= 0.6%)."""
+    """Relative change v (in %) as plain signed text (the sign carries the direction; no colour)."""
     v = 0.0 if round(v, 1) == 0 else v  # no "-0.0"
-    txt = f"${v:+.1f}$\\%"
-    if abs(v) < 0.6:
-        return txt
-    return (r"\worse{" if v > 0 else r"\better{") + txt + "}"
+    return f"${v:+.1f}$\\%"
 
 
 def p_txt(p):
